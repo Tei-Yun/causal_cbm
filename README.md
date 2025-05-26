@@ -1,5 +1,19 @@
-Guidelines for executing the code to reproduce experiments of the submitted paper:
-"Causally Reliable Concept Bottleneck Models"
+# Causally Reliable Concept Bottleneck Models (ArXiv 2025)
+
+[![PDF](https://img.shields.io/badge/%E2%87%A9-PDF-orange.svg?style=flat-square)](https://arxiv.org/pdf/2503.04363?)
+
+Code implementation and official repository for the paper "Causally Reliable Concept Bottleneck Models" (ArXiv 2025)
+
+**Authors**: [Giovanni De Felice](mailto:giovanni.de.felice@usi.ch), Arianna Casanova Flores, Francesco De Santis, Silvia Santini, Johannes Schneider, Pietro Barbiero, Alberto Termine
+
+---
+
+## TLDR
+
+We propose Causally reliable Concept Bottleneck Models (C2BMs), a class of concept-based architectures that enforce reasoning through a bottleneck of concepts structured according to a model of the real-world causal mechanisms. We also introduce a pipeline to automatically learn this structure from observational data and unstructured background knowledge (e.g., scientific literature). Experimental evidence suggest that C2BM are more interpretable, causally reliable, and improve responsiveness to interventions w.r.t. standard opaque and conceptbased models, while maintaining their accuracy.
+
+---
+
 
 (Tested with Python 3.12 on Ubuntu 22.04.3 LTS)
 
@@ -58,3 +72,18 @@ To display the results and the intervention plots:
     - insert the output run paths in the `make_plot.py` script, following the many (commented out) examples already present in the script.
     - execute `python make_plot.py`
     - accuracies will be printed in the terminal and the plots will be saved in the `plots` folder.
+
+
+
+## Bibtex reference
+
+If you find this code useful please consider citing our paper:
+
+```
+@article{de2025causally,
+  title={Causally reliable concept bottleneck models},
+  author={De Felice, Giovanni and Flores, Arianna Casanova and De Santis, Francesco and Santini, Silvia and Schneider, Johannes and Barbiero, Pietro and Termine, Alberto},
+  journal={arXiv preprint arXiv:2503.04363},
+  year={2025}
+}
+```
