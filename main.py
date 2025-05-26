@@ -24,7 +24,7 @@ from src.completion.completion_block import complete_graph_with_llm
 
 # training and utils
 from src.trainer import Trainer
-from src.hydra import parse_hyperparams
+from hydra_parsing import parse_hyperparams
 from src.data.utils import static_graph_collate
 from src.metrics import hamming_distance
 from src.plots import maybe_plot_graph
@@ -134,7 +134,7 @@ def main(cfg: DictConfig) -> None:
         if cfg.dataset.loader.ftune_size > 0: 
             trainer, engine = finetune_model(cfg, engine, dataset)
         # ----- test
-        trainer.test(engine, test_dataloader)
+        trainer.test(engine, test_dataloader, ckpt_path='best')
         trainer.logger.finalize("success")
     finally:
         if isinstance(trainer.logger, WandbLogger):
