@@ -24,7 +24,7 @@ from src.completion.completion_block import complete_graph_with_llm
 
 # training and utils
 from src.trainer import Trainer
-from hydra_parsing import parse_hyperparams
+from src.hydra_parsing import parse_hyperparams
 from src.data.utils import static_graph_collate
 from src.metrics import hamming_distance
 from src.plots import maybe_plot_graph

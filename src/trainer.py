@@ -14,7 +14,7 @@ from torch import cuda
 
 from env import PROJECT_NAME, WANDB_ENTITY
 from hydra.core.hydra_config import HydraConfig
-from hydra_parsing import parse_hyperparams
+from src.hydra_parsing import parse_hyperparams
 from wandb.sdk.lib.runid import generate_id
 
 class GradientMonitor_afterB(pl.Callback):

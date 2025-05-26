@@ -6,7 +6,7 @@ from torch.utils.data import DataLoader
 import torch.nn.functional as F
 
 from src.trainer import Trainer
-from hydra_parsing import parse_hyperparams, target_classname
+from src.hydra_parsing import parse_hyperparams, target_classname
 from src.data.utils import static_graph_collate
 from src.metrics import edge_type
 from torch.distributions import MultivariateNormal
