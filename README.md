@@ -1,16 +1,18 @@
-# Causally Reliable Concept Bottleneck Models (ArXiv 2025)
+# Causally Reliable Concept Bottleneck Models
 
 [![PDF](https://img.shields.io/badge/%E2%87%A9-PDF-orange.svg?style=flat-square)](https://arxiv.org/pdf/2503.04363?)
-
-Code implementation and official repository for the paper "Causally Reliable Concept Bottleneck Models" (ArXiv 2025)
 
 **Authors**: [Giovanni De Felice](mailto:giovanni.de.felice@usi.ch), Arianna Casanova Flores, Francesco De Santis, Silvia Santini, Johannes Schneider, Pietro Barbiero, Alberto Termine
 
 ---
 
-## TLDR
+We propose Causally reliable Concept Bottleneck Models (C2BMs), a class of concept-based architectures that enforce reasoning through a bottleneck of concepts structured according to a model of the real-world causal mechanisms. We also introduce a pipeline to automatically learn this structure from observational data and unstructured background knowledge (e.g., scientific literature). 
 
-We propose Causally reliable Concept Bottleneck Models (C2BMs), a class of concept-based architectures that enforce reasoning through a bottleneck of concepts structured according to a model of the real-world causal mechanisms. We also introduce a pipeline to automatically learn this structure from observational data and unstructured background knowledge (e.g., scientific literature). Experimental evidence suggest that C2BM are more interpretable, causally reliable, and improve responsiveness to interventions w.r.t. standard opaque and conceptbased models, while maintaining their accuracy.
+<p align="center">
+<img src="https://raw.githubusercontent.com/gdefe/causally-reliable-cbm/main/visual_abstract.pdf" style="width: 18cm">
+<br>
+
+Experimental evidence suggest that C2BM are more interpretable, causally reliable, and improve responsiveness to interventions w.r.t. standard opaque and conceptbased models, while maintaining their accuracy.
 
 ---
 
