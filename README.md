@@ -8,9 +8,7 @@
 
 We propose Causally reliable Concept Bottleneck Models (C2BMs), a class of concept-based architectures that enforce reasoning through a bottleneck of concepts structured according to a model of the real-world causal mechanisms. We also introduce a pipeline to automatically learn this structure from observational data and unstructured background knowledge (e.g., scientific literature). 
 
-<p align="center">
-<img src="https://raw.githubusercontent.com/gdefe/causally-reliable-cbm/master/visual_abstract.pdf" style="width: 18cm">
-<br>
+![alt text](https://github.com/gdefe/causally-reliable-cbm/blob/main/visual_abstract.pdf?raw=true)
 
 Experimental evidence suggest that C2BM are more interpretable, causally reliable, and improve responsiveness to interventions w.r.t. standard opaque and conceptbased models, while maintaining their accuracy.
 
