@@ -20,7 +20,8 @@ from src.data.dataset_block import get_dataset
 from src.causal_discovery.causal_discovery_block import causal_discovery
 
 # graph completion block
-from src.completion.completion_block import complete_graph_with_llm
+#tei 수정 11/29 => llm 안쓸거임
+#from src.completion.completion_block import complete_graph_with_llm
 
 # training and utils
 from src.trainer import Trainer
@@ -75,11 +76,15 @@ def main(cfg: DictConfig) -> None:
                 print('(after CD) structural hamming distance: ', hamming)    
 
             # complete the causal graph with LLM and RAG
-            completed_graph = complete_graph_with_llm(cfg, predicted_graph, cfg.dataset.name)
-            if true_graph is not None:
-                hamming = hamming_distance(true_graph, completed_graph)
-                print('(after LLM + RAG) structural hamming distance: ', hamming)
-            graph = completed_graph
+
+            #tei 수정 11/29 => llm 안쓸거임
+            # completed_graph = complete_graph_with_llm(cfg, predicted_graph, cfg.dataset.name)
+            # if true_graph is not None:
+            #     hamming = hamming_distance(true_graph, completed_graph)
+            #     print('(after LLM + RAG) structural hamming distance: ', hamming)
+            # graph = completed_graph
+
+            graph = predicted_graph
 
             # save graph
             with open(os.path.join(dataset_directory, "graph.pkl"), 'wb') as f:
@@ -100,9 +105,15 @@ def main(cfg: DictConfig) -> None:
     maybe_plot_graph(graph, 'fixed_graph')
 
     # use the graph to define an intervention policy at test time
-    interv_policy, ip_names = get_intervention_policy(cfg.policy, graph, true_graph, y_index)
-    print('intervention policy:', interv_policy)
-    print('intervention policy names:', ip_names)
+    #tei 수정 11/29
+    if cfg.policy == 'none':
+        interv_policy = []
+        ip_names = []
+        print('Intervention policy: None (Disabled)')
+    else:
+        interv_policy, ip_names = get_intervention_policy(cfg.policy, graph, true_graph, y_index)
+        print('intervention policy:', interv_policy) #ex)interv_policy = [[0], [2], [4], [1], [3], [5]]
+        print('intervention policy names:', ip_names)
 
     # update config based on the dataset
     # e.g., set input and output size of the model
@@ -124,6 +135,8 @@ def main(cfg: DictConfig) -> None:
                                  collate_fn=static_graph_collate,
                                  num_workers=cfg.dataset.num_workers)
     
+    print("DEBUG engine cfg:", cfg.engine)
+    print("Trying to instantiate:", cfg.engine._target_)
     engine = instantiate(cfg.engine)
     try:
         trainer = Trainer(cfg)

@@ -1,54 +1,103 @@
-name: c2bm
+# name: tei_c2bm #tei 수정 11-29
+# channels:
+#   - pyg
+#   - pytorch
+#   - nvidia
+#   - conda-forge
+#   - defaults
+# dependencies:
+#   - python>=3.8
+#   - pytorch:pytorch>=2.1
+#   - torchvision>=0.17.1
+#   - networkx
+#   - lightning
+#   - cdt
+#   - fpdf2
+#   - requests
+#   - python-dotenv 
+#   - hydra-core=1.3.*
+#   - numpy
+#   - pandas
+#   - tqdm
+#   - scipy
+#   - scikit-learn
+#   - seaborn
+#   - tqdm
+#   - openpyxl
+#   - huggingface_hub
+#   - transformers
+#   - pyg:pyg=*=*cu*
+#   - pyg:pytorch-scatter
+#   - pyg:pytorch-sparse
+#   - pytorch:pytorch-cuda
+#   - pip
+#   - pip:
+#     - wandb
+#     - plotly
+#     - kaleido
+#     - gdown
+#     - causal-learn
+#     - langchain_community
+#     - langchain
+#     - langchain_core
+#     - langchain_huggingface
+#     - accelerate>=0.26.0
+#     - bnlearn
+#     - nltk
+#     - mistralai
+#     - openai
+#     - requests
+#     - beautifulsoup4
+#     - lxml
+#     - duckduckgo_search
+#     - hydra-list-sweeper
+#     - pytorch-minimize
+
+
+
+name: tei_c2bm
 channels:
-  - pyg
   - pytorch
   - nvidia
   - conda-forge
   - defaults
 dependencies:
-  - python>=3.8
-  - pytorch:pytorch>=2.1
-  - torchvision>=0.17.1
-  - networkx
-  - lightning
-  - cdt
-  - fpdf2
-  - requests
-  - python-dotenv 
-  - hydra-core=1.3.*
+  - python=3.10
+  - pytorch=2.1
+  - torchvision
+  - pytorch-cuda=12.1
   - numpy
   - pandas
-  - tqdm
   - scipy
   - scikit-learn
-  - seaborn
+  - networkx
   - tqdm
-  - openpyxl
-  - huggingface_hub
-  - transformers
-  - pyg:pyg=*=*cu*
-  - pyg:pytorch-scatter
-  - pyg:pytorch-sparse
-  - pytorch:pytorch-cuda
+  - lightning
+  - hydra-core=1.3.*
   - pip
   - pip:
+    - pytorch-geometric
+    - pytorch-scatter
+    - pytorch-sparse
     - wandb
-    - plotly
     - kaleido
     - gdown
     - causal-learn
-    - langchain_community
     - langchain
+    - langchain-community
     - langchain_core
     - langchain_huggingface
+    - transformers
+    - huggingface_hub
     - accelerate>=0.26.0
     - bnlearn
     - nltk
     - mistralai
     - openai
-    - requests
     - beautifulsoup4
     - lxml
     - duckduckgo_search
     - hydra-list-sweeper
-    - pytorch-minimize
+    - fpdf2
+    - python-dotenv
+    - requests

@@ -105,7 +105,7 @@ class CBM(nn.Module):
         concept_loss = 0
         for name, c_hat in c_hat_dict.items():
             c_hat = torch.log(c_hat + 1e-6)
-            concept_loss += loss_form(c_hat, c[:,self.concept_names.index(name)].long())
+            concept_loss += loss_form(c_hat, c[:,self.concept_names.index(name)].long()) #각 concept 별로 독립적인 cross entropy 계산
         if self.normalize_concept_loss:
             concept_loss /= len(c_hat_dict)
             

@@ -1,5 +1,7 @@
-from mistralai import Mistral
-import openai
+
+#tei 수정 11/29
+#from mistralai import Mistral
+#import openai
 import os
 from env import OPENAI_API_KEY
 

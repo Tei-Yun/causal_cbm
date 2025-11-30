@@ -5,10 +5,12 @@ import itertools
 import torch
 from torch import nn
 from torchmetrics import Metric, MetricCollection
+#tei 수정 11/29
 from torchmetrics.collections import _remove_prefix
 import pytorch_lightning as pl
 
 from src.models.layers.intervention import get_test_intervention_index
+
 
 class Predictor(pl.LightningModule):    
     def __init__(self,
@@ -36,7 +38,14 @@ class Predictor(pl.LightningModule):
         self.intervention_prob = intervention_prob
         # store the intervention policy
         self.test_interv_policy = test_interv_policy
+
+        #tei 수정 11/29
+        ## [Fix] test_interv_policy가 None이면 빈 리스트로 초기화 (len() 에러 방지)
+        if self.test_interv_policy is None:
+            self.test_interv_policy = []
+
         self.test_interv_noise = test_interv_noise  
+
 
         self.c_names = c_names
         self.n_concepts = len(c_names)
@@ -44,6 +53,9 @@ class Predictor(pl.LightningModule):
         if metrics is None:
             metrics = dict()
         self._set_metrics(metrics)
+
+        #tei 수정 11/29
+        self.c_hat_accumulator = {name: [] for name in self.c_names}
 
     def forward(self, *args, **kwargs):
         return self.model(*args, **kwargs)
@@ -332,6 +344,13 @@ class Predictor(pl.LightningModule):
         self.test_intervention(batch)
         if 'Qualified' in self.c_names:
             self.test_intervention_fairness(batch)
+
+        #tei 수정 11/29
+        # accumulate predicted concepts for later analysis
+        for name, pred in c_hat.items():
+            self.c_hat_accumulator[name].append(pred.detach().cpu())   
+
+
         return test_loss
 
     def on_test_epoch_end(self):
@@ -378,6 +397,15 @@ class Predictor(pl.LightningModule):
                          'policy':self.test_interv_policy}, open("graph.pkl", 'wb'))
             
             pickle.dump({'policy':self.test_interv_policy}, open("policy.pkl", 'wb'))
+        
+        #tei 수정 11/29
+        # save all predicted concept probabilities
+        final_c_hat = {name: torch.cat(self.c_hat_accumulator[name], dim=0)
+                    for name in self.c_hat_accumulator}
+        pickle.dump(final_c_hat, open("results/c_hat_all.pkl", "wb"))
+        print("Saved all concept predictions to results/c_hat_all.pkl")
+
+
 
     def configure_optimizers(self):
         """"""

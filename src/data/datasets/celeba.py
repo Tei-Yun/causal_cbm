@@ -9,6 +9,55 @@ from typing import Union, List, Optional
 from src.data.utils import split_dataset
 
 
+#tei 수정 11/29: CelebA 커스텀 데이터셋 정의
+# --- Patch torchvision CelebA to skip identity loading ---
+import os
+import torch
+import torchvision.datasets.celeba as tvc
+from collections import namedtuple
+
+# CSV 타입 직접 정의 (NameError 방지)
+CSV = namedtuple("CSV", ["header", "index", "data"])
+
+# 원래 함수 백업
+_orig_load_csv = tvc.CelebA._load_csv
+
+#tei 수정 11/29
+def _load_csv_skip_identity(self, filename, header=None):
+    # Kaggle 버전에는 identity_CelebA.txt 없음 → dummy 생성
+    if filename == "identity_CelebA.txt":
+        split_path = os.path.join(self.root, self.base_folder, "list_eval_partition.txt")
+        with open(split_path) as f:
+            n = len(f.readlines())  # 이미지 개수
+
+        # dummy identity 반환
+        return CSV(
+            header=[],
+            index=[""] * n,
+            data=torch.zeros((n, 1), dtype=torch.int)
+        )
+
+    # 나머지는 기존 로더 유지
+    return _orig_load_csv(self, filename, header)
+
+
+# Patch 적용
+tvc.CelebA._load_csv = _load_csv_skip_identity
+##
+
+
+
+# >>> tei 수정 11/29: CelebA 무결성(md5) 체크 우회 (Kaggle 파일 사용)
+def _patch_celeba_check_integrity():
+    def _always_true(self) -> bool:
+        # root/base_folder 구조와 img_align_celeba 폴더만 확인
+        import os
+        img_dir = os.path.join(self.root, self.base_folder, "img_align_celeba")
+        return os.path.isdir(img_dir)
+
+    CelebA._check_integrity = _always_true
+
+_patch_celeba_check_integrity()
 
 class CelebADataset():
     """
@@ -40,7 +89,11 @@ class CelebADataset():
                        'cardinality': None} # to be updated in the split method
         self.y_info = {'names': [task_label],
                        'cardinality': [task_cardinality]}
+        
+    
         self.to_keep = list(to_keep.keys()) if to_keep is not None else None
+
+
         self.data = {}
 
     def load_ground_truth_graph(self): 
@@ -114,7 +167,14 @@ class _CelebADataset(CelebA):
 
         concepts = self.attr
         concept_names = [string for string in self.attr_names if string]  # Remove the '' at the end
-    
+
+        #tei 수정 11/29
+        # [Fix] 헤더(concept_names)가 데이터(concepts)보다 1개 더 많으면(예: image_id 포함), 앞부분을 제거하여 맞춤
+        if len(concept_names) == concepts.shape[1] + 1:
+            concept_names = concept_names[1:]
+        ##
+
+
         # select a few concepts
         concepts, concept_names = self._select_a_few_concepts(concepts, concept_names, to_keep)
         # # add custom concepts
@@ -137,6 +197,11 @@ class _CelebADataset(CelebA):
             concepts: The selected concept attributes.
             to_keep: The selected concept attribute names.
         """
+
+        # to_keep=None이면 전체 사용 => tei 수정 11/29
+        if to_keep is None:
+            return concepts, concept_names
+
         concepts = concepts[:, [concept_names.index(name) for name in to_keep]]
         return concepts, to_keep
     

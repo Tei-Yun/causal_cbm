@@ -15,7 +15,9 @@ from src.data.utils import reduce_dataset
 from src.data.datasets.colormnist import update_concept_names_ColorMNIST, onehot_to_concepts_ColorMNIST
 from src.data.autoencoder import AutoencoderTrainer, scale_embeddings
 from src.data.labelfree_preprocessing import load_pretrained_clip_model, generate_img_embeddings_and_assign_concepts
-from src.completion.concepts_retrieval import concepts_generation, filtering_concepts_from_llm
+
+# tei 수정 11/29 llm 관련 주석처리
+# from src.completion.concepts_retrieval import concepts_generation, filtering_concepts_from_llm
 from src.data.datasets.synthetic import get_synthetic_datasets, SyntheticDatasetContainer
 
 def generate_img_embeddings(dataset: torch.utils.data.Dataset,
@@ -151,22 +153,26 @@ def preprocess_dataset(cfg, _dataset, device, backbone) -> dict:
         	   
         # if we already generated the concepts we simply read them form the respective json file,
         # otherwise we generate them using the llm.
-        concepts_path = os.path.join(CACHE, "siim_pneumothorax")
-        if not os.path.exists(os.path.join(concepts_path, 'generated_concepts.json')):
-            # generate concepts with llm
-            concepts = concepts_generation()
-            concepts = filtering_concepts_from_llm(concepts,
-                                                    class_labels = dataset.y_info['names'],
-                                                    training_data = dataset.data["train"],
-                                                    clip_model = clip_model,
-                                                    clip_tokenizer = clip_tokenizer,
-                                                    ckpt_config = ckpt_config,
-                                                    device = device) 
-            with open(os.path.join(concepts_path, 'generated_concepts.json'), 'w') as f:
-                json.dump({'concepts': concepts}, f)
-        else:
-            with open(os.path.join(concepts_path, 'generated_concepts.json')) as f:
-                concepts = json.load(f)['concepts']          
+
+        #tei 수정 11/29 llm 관련 주석처리
+        # concepts_path = os.path.join(CACHE, "siim_pneumothorax")
+        # if not os.path.exists(os.path.join(concepts_path, 'generated_concepts.json')):
+        #     # generate concepts with llm
+        #     concepts = concepts_generation()
+        #     concepts = filtering_concepts_from_llm(concepts,
+        #                                             class_labels = dataset.y_info['names'],
+        #                                             training_data = dataset.data["train"],
+        #                                             clip_model = clip_model,
+        #                                             clip_tokenizer = clip_tokenizer,
+        #                                             ckpt_config = ckpt_config,
+        #                                             device = device) 
+        #     with open(os.path.join(concepts_path, 'generated_concepts.json'), 'w') as f:
+        #         json.dump({'concepts': concepts}, f)
+        # else:
+        #     with open(os.path.join(concepts_path, 'generated_concepts.json')) as f:
+        #         concepts = json.load(f)['concepts']          
+
+
         dataset = generate_img_embeddings_and_assign_concepts(dataset_name = cfg.dataset.get('name'),
                                                                 dataset = dataset,
                                                                 concepts = concepts,

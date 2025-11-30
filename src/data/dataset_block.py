@@ -23,7 +23,7 @@ def get_dataset(cfg):
     dataset_directory = os.path.join(str(CACHE / cfg.dataset.name))
     os.makedirs(dataset_directory, exist_ok=True)
 
-    destination_path = os.path.join(dataset_directory, f"preprocessed_dataset_{cfg.seed}.pkl")
+    destination_path = os.path.join(dataset_directory, f"preprocessed_dataset_{cfg.seed}.pkl") # '.cache\에 저장
     if cfg.dataset.get('load_embeddings') == False:
         dataset = instantiate(cfg.dataset.loader)
         dataset = preprocess_dataset(cfg, 

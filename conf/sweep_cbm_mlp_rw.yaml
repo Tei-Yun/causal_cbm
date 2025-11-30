@@ -1,8 +1,12 @@
 defaults:
   - default
-  - override causal_discovery: ges
-  - override llm: gpt
-  - override rag: standard
+  #tei 주석 처리 11/29
+  #- override causal_discovery: ges
+  #- override llm: gpt
+  #- override rag: standard
+  - override causal_discovery: Null
+  - override llm: Null
+  - override rag: Null
   - _self_  
   # override this to use the new list sweeper:
   - override hydra/sweeper: list
@@ -11,6 +15,7 @@ hydra:
   mode: MULTIRUN
   sweep:
     dir: "outputs/multirun/${now:%Y-%m-%d}/${now:%H-%M-%S}_cbm_mlp_real"
+  
   sweeper:
     # standard grid search
     grid_params:
@@ -19,23 +24,27 @@ hydra:
       # colormnist, colormnist_ood, celeba, celeba_unfair, siim_pneumothorax
       # possible models are:
       # blackbox, blackbox_multi, cbm_linear, cbm_mlp, cem, c2bm
+
       model: cbm_mlp
-      seed: 1,2,3,4,5
+      seed: 1,2 #,3,4,5
       model.hidden_size: 64
       model.concept_loss_weight: 0.8
       engine.optim_kwargs.lr: 0.00075
     list_params:
-      dataset: celeba, cub_causal_struct, siim_pneumothorax
-      dataset.batch_size: 512, 512, 128
+      dataset: celeba  #, cub_causal_struct, siim_pneumothorax
+      dataset.batch_size: 512   #, 512, 128
 
+#tei 수정 11/29
 policy: nodes_true # levels_true, levels_pred, nodes_true, nodes_pred, random
+#olicy: none  # <--- 기존 nodes_true 또는 all 에서 none 으로 변경
 
 dataset:
-  load_embeddings: false
-  load_graph: false
-  load_true_graph: false
+  #load_embeddings: false
+  load_embeddings: true
+  load_graph: true        # <--- 여기를 true로 변경 (저장된 graph.pkl 로드)
+  load_true_graph: false  # <--- 여기는 false 유지 (코드 상의 True Graph 사용 안 함)
   # batch_size: 512  # 128 (Pneumo, all SCBM), 512 (all others)
-  num_workers: 0
+  num_workers: 4 #0
 
 engine:
   intervention_prob: 0.8
@@ -43,11 +52,13 @@ engine:
 trainer:
   logger: null  # wandb, null
   devices: [0]
-  max_epochs: 500
-  patience: 30
+  max_epochs: 10 #500
+  patience: 15 #30
 
-rag:
-  verbose: false
-  source: arxiv # arxiv or custom (arxiv + www scraper)
+#tei 수정 11/29
+# [Deleted] 이 부분이 살아있어서 위쪽의 Null 설정을 덮어쓰고 있었습니다.
+# rag:
+#   verbose: false
+#   source: arxiv # arxiv or custom (arxiv + www scraper)
 
 notes: neurips_test
