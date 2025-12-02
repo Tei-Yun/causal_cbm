@@ -27,7 +27,7 @@ def get_test_intervention_index(c_shape, c_index, values=None):
         for i in range(len(c_index)):
             # indices
             index_i = c_index[i]
-            intervention_index[:,index_i] = 1
+            intervention_index[:,index_i] = 1 #concept i 에 대해 intervention mask 1로 설정
             # values
             if values is not None:
                 values_i = values[i]
@@ -43,6 +43,9 @@ def get_test_intervention_index(c_shape, c_index, values=None):
     else:
         return intervention_index.to("cuda" if torch.cuda.is_available() else "cpu")
 
+
+#실제 확률 분포 수정(do-operator 적용)
+#intervention_index==1인 concept의 predicted probability를 ground truth one-hot로 교체
 def maybe_intervene(c_pred_probs, c, intervention_index):
     # check if intervention index is not all zeros (non interventions) and ground truth is not all nans (virutal roots)
     if not torch.all(intervention_index == 0) and not torch.all(torch.isnan(c)):
@@ -62,6 +65,10 @@ def maybe_intervene_scbm(c_mu, c_triang_cov, c, intervention_index,
     # check if intervention index is not all zeros (non interventions) and ground truth is not all nans (virutal roots)
     if not torch.all(intervention_index == 0) and not torch.all(torch.isnan(c)):
         # check if c is nan where intervention index is not 0
+
+        #intervention이 없는 concept은 무시하기 위한 dummy 값 -> 
+        # 실제 모델에서는 intervention_index=1 인 위치만 사용됨 -> 
+        # nan을 사용하면 nan-propagation 문제 생겨서 이렇게 쓴 것임
         if torch.any(torch.isnan(c) & (intervention_index != 0)) or torch.any((c==-99999999.) & (intervention_index != 0)):
             raise ValueError("Intervention with nan ground truth is not allowed")
         

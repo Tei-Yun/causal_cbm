@@ -1,8 +1,12 @@
 defaults:
   - default
-  - override causal_discovery: ges
-  - override llm: gpt
-  - override rag: standard
+  #tei 주석 처리 11/29
+  #- override causal_discovery: ges
+  #- override llm: gpt
+  #- override rag: standard
+  - override causal_discovery: Null
+  - override llm: Null
+  - override rag: Null
   - _self_  
   # override this to use the new list sweeper:
   - override hydra/sweeper: list
@@ -25,29 +29,31 @@ hydra:
       model.dropout: 0.5
       engine.optim_kwargs.lr: 0.00075
     list_params:
-      dataset: celeba, cub_causal_struct, siim_pneumothorax
-      dataset.batch_size: 512, 512, 128
+      dataset: celeba #, cub_causal_struct, siim_pneumothorax
+      dataset.batch_size: 512 #, 512, 128
 
 policy: nodes_true # levels_true, levels_pred, nodes_true, nodes_pred, random
 
 dataset:
-  load_embeddings: false
-  load_graph: false
-  load_true_graph: false
-  # batch_size: 512  # 128 (Pneumo, all SCBM), 512 (all others)
-  num_workers: 0
+  load_embeddings: true
+  #load_embeddings: true
+  load_graph: true        # <--- 여기를 true로 변경 (저장된 graph.pkl 로드)
+  load_true_graph: false  # <--- 여기는 false 유지 (코드 상의 True Graph 사용 안 함)
+  num_workers: 4
 
 engine:
   intervention_prob: 0.8
 
 trainer:
-  logger: null # wandb, null
-  devices: [0]
+  logger: wandb # wandb, null
+  devices: [1]
   max_epochs: 500
   patience: 30
 
-rag:
-  verbose: false
-  source: arxiv # arxiv or custom (arxiv + www scraper)
+#tei 수정 11/29
+#이 부분이 살아있어서 위쪽의 Null 설정을 덮어쓰고 있었음
+# rag:
+#   verbose: false
+#   source: arxiv # arxiv or custom (arxiv + www scraper)
 
 notes: neurips_test

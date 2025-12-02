@@ -64,6 +64,10 @@ def update_config_from_data(cfg: DictConfig, dataset) -> DictConfig:
         )
         cfg.engine.update(
             c_names = dataset.c_info['names']
+            #tei 수정 11/29
+
+            # [Add] Task 이름을 Config에서 가져와 Engine 설정에 주입
+            ,task_name = dataset.y_info['names']
         )
     return cfg
 

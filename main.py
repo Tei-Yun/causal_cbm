@@ -55,11 +55,11 @@ def main(cfg: DictConfig) -> None:
     print(f"Using {cfg.device} device")
 
     # adjust config
-    cfg = clean_empty_configs(cfg)
+    cfg = clean_empty_configs(cfg) #causal_discovery, llm, rag 관련 config 참고 하여 초기화 => discovery 관련 설정
 
     # instantiate the dataset, split into train, val, test
     # preprocess all of them and save the preprocessed dataset
-    dataset, true_graph, dataset_directory = get_dataset(cfg)
+    dataset, true_graph, dataset_directory = get_dataset(cfg) #전처리 + true_graph 얻기(discovery or cache에서 로드)
 
     # get the causal graph
     if cfg.dataset.load_true_graph:
@@ -94,8 +94,15 @@ def main(cfg: DictConfig) -> None:
     # (part 1): remove bidirected and undirected edges + add virtual nodes
     # edge can only be directed at this stage, the following function is just here in 
     # case the CD + LLM + RAG pipeline is modified and could produce bidirected or undirected edges
+
+
+    #discovery 따로 할거라면, 이쪽 부분도 없애도 될듯
     graph, dataset = remove_problematic_edges(graph, dataset)
+
+    #y_index 는 DAG에서 task 노드 위치 => 반드시 마지막 노드여야 한다고 assert로 강제하는 코드
     y_index = list(graph.index).index(dataset.y_info['names'][0]); assert y_index == len(graph) - 1
+
+    
     # (part 2): remove cycles
     graph = remove_cycles(graph, y_index)
 
@@ -134,6 +141,60 @@ def main(cfg: DictConfig) -> None:
                                  batch_size=cfg.dataset.batch_size, 
                                  collate_fn=static_graph_collate,
                                  num_workers=cfg.dataset.num_workers)
+    
+    #tei 추가 11/29
+    # [Add] 전체 데이터셋(Train/Val/Test)의 Ground Truth Concept 추출 및 저장
+    print("Extracting Ground Truth Concepts from ALL splits for CNF training...")
+    
+    splits = ['train', 'val', 'test']
+    dataloaders = [train_dataloader, val_dataloader, test_dataloader]
+    
+    all_concepts_data = {}
+
+    for split_name, loader in zip(splits, dataloaders):
+        print(f"Processing {split_name} split...")
+        split_c_list = []
+        split_y_list = [] # [Add] y 수집용 리스트
+        
+        # 모델 학습에 영향 없도록 torch.no_grad() 사용
+        with torch.no_grad():
+            for batch in loader:
+                if 'c' in batch:
+                    split_c_list.append(batch['c'].cpu())
+                if 'y' in batch: # [Add] y 수집
+                    split_y_list.append(batch['y'].cpu())
+        
+        if split_c_list:
+            # 하나의 텐서로 병합 [N_samples, N_concepts]
+            c_tensor = torch.cat(split_c_list, dim=0)
+            
+            # y도 병합 [N_samples] or [N_samples, 1]
+            if split_y_list:
+                y_tensor = torch.cat(split_y_list, dim=0)
+                # 차원 맞추기 (y가 1차원이면 2차원으로 확장)
+                if y_tensor.ndim == 1:
+                    y_tensor = y_tensor.unsqueeze(1)
+                
+                # c와 y를 합쳐서 저장 (보통 y가 마지막에 옴)
+                # [N, C] + [N, 1] -> [N, C+1]
+                combined_tensor = torch.cat([c_tensor, y_tensor], dim=1)
+                all_concepts_data[split_name] = combined_tensor
+                print(f"  > {split_name}: {combined_tensor.shape} (Concepts + Task)")
+            else:
+                all_concepts_data[split_name] = c_tensor
+                print(f"  > {split_name}: {c_tensor.shape} (Concepts only)")
+        else:
+            print(f"  > {split_name}: No concepts found.")
+
+    # 파일로 저장
+    save_path = "results/all_ground_truth_concepts.pkl"
+    with open(save_path, 'wb') as f:
+        pickle.dump(all_concepts_data, f)
+    
+    print(f"Saved all ground truth concepts to {save_path}")
+    print("Structure: {'train': Tensor, 'val': Tensor, 'test': Tensor}")
+    # ---------------------------------------------------------
+
     
     print("DEBUG engine cfg:", cfg.engine)
     print("Trying to instantiate:", cfg.engine._target_)

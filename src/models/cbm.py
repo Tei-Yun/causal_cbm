@@ -30,8 +30,10 @@ class CBM(nn.Module):
 
         # concepts info
         self.concept_names = c_info['names']
-        self.virtual_roots = [name for name in c_info['names'] if name.startswith('#virtual_')]
+        self.virtual_roots = [name for name in c_info['names'] if name.startswith('#virtual_')] #유령 root 제거 (BN dataset에서만 생김)
         self.concept_loss_weight = concept_loss_weight
+
+        ##concept 하나가 binary라면 cardinality=2
         self.filtered_c_info = {
             "names": [name for name in c_info["names"] if name not in self.virtual_roots],
             "cardinality": [card for name, card in zip(c_info["names"], c_info["cardinality"]) if name not in self.virtual_roots]
@@ -62,13 +64,17 @@ class CBM(nn.Module):
     def forward(self, x, c=None, intervention_index=None):
         # filter out virtual roots from c and intervention_index
         filtered_c = c[:, [i for i, name in enumerate(self.concept_names) if name not in self.virtual_roots]]
-        filtered_intervention_index = intervention_index[:, [i for i, name in enumerate(self.concept_names) if name not in self.virtual_roots]]
+        filtered_intervention_index = intervention_index[:, [i for i, name in enumerate(self.concept_names) if name not in self.virtual_roots]] 
         
-        c_hat_logits = self.c_mlp(x)
+        c_hat_logits = self.c_mlp(x) #여기까지는 하나의 큰 tensor로 나옴
         c_hat_probs = {}
+
+        #concept별로 softmax 쪼개서 dict로 저장
         for i, name in enumerate(self.filtered_c_info['names']):
             c_hat_probs[name] = torch.softmax(c_hat_logits[:,sum(self.filtered_c_info['cardinality'][:i]):sum(self.filtered_c_info['cardinality'][:i+1])], dim=1)
-            # Maybe intervene on concepts probabilities
+
+            # Intervention 수행
+            ##intervention_index==1인 concept의 predicted probability를 ground truth one-hot로 교체
             if filtered_c[:,i] is not None and filtered_intervention_index[:,i] is not None:
                 c_hat_probs[name] = maybe_intervene(c_hat_probs[name], filtered_c[:,i], filtered_intervention_index[:,i])
         

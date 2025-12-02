@@ -22,12 +22,18 @@ class Predictor(pl.LightningModule):
                 scheduler_kwargs: Optional[Mapping] = None,
                 intervention_prob: Optional[float] = 0.2,
                 c_names: Optional[list] = None,
+                #tei 수정 11/29
+                # [Add] Task 이름 인자 추가
+                task_name: Optional[str] = 'y_hat',
                 test_interv_policy: Optional[str] = None,
                 test_interv_noise: Optional[float] = 0.,
                 ):
         super(Predictor, self).__init__()         
         self.model = model
         self.save_hyperparameters(ignore=["model"], logger=False)
+
+        # [Add] Task 이름 저장
+        self.task_name = task_name
 
         self.optim_class = optim_class
         self.optim_kwargs = optim_kwargs or dict()
@@ -56,6 +62,9 @@ class Predictor(pl.LightningModule):
 
         #tei 수정 11/29
         self.c_hat_accumulator = {name: [] for name in self.c_names}
+
+        # [Add] Task prediction(y_hat)을 저장할 리스트 초기화
+        self.y_hat_accumulator = []
 
     def forward(self, *args, **kwargs):
         return self.model(*args, **kwargs)
@@ -347,9 +356,16 @@ class Predictor(pl.LightningModule):
 
         #tei 수정 11/29
         # accumulate predicted concepts for later analysis
-        for name, pred in c_hat.items():
-            self.c_hat_accumulator[name].append(pred.detach().cpu())   
+        # [Fix] Blackbox 모델은 c_hat이 None이므로 체크 필요
+        if c_hat is not None:
+            for name, pred in c_hat.items():
+                # c_hat_accumulator에 해당 키가 있는지 확인 (안전장치)
+                if name in self.c_hat_accumulator:
+                    self.c_hat_accumulator[name].append(pred.detach().cpu())
 
+        # [Add] Task 예측값(y_hat) 수집 (이것이 Mouth_Slightly_Open 예측값임)
+        if y_hat is not None:
+            self.y_hat_accumulator.append(y_hat.detach().cpu())
 
         return test_loss
 
@@ -398,12 +414,40 @@ class Predictor(pl.LightningModule):
             
             pickle.dump({'policy':self.test_interv_policy}, open("policy.pkl", 'wb'))
         
-        #tei 수정 11/29
+        #tei 수정 11/29 => 이부분을 아예 p(0)만 저장하도록 해도 될듯
         # save all predicted concept probabilities
-        final_c_hat = {name: torch.cat(self.c_hat_accumulator[name], dim=0)
-                    for name in self.c_hat_accumulator}
-        pickle.dump(final_c_hat, open("results/c_hat_all.pkl", "wb"))
-        print("Saved all concept predictions to results/c_hat_all.pkl")
+        # [Fix] 데이터가 수집된 경우에만 저장 (Blackbox 제외)
+        # [Modified] c_hat 뿐만 아니라 y_hat도 함께 저장하도록 수정
+        if any(self.c_hat_accumulator.values()) or self.y_hat_accumulator:
+            final_data = {}
+            
+            # [Add] 이진화 변환 함수 (확률 -> 0 or 1)
+            def to_binary(t):
+                # 1. 차원이 1개거나 [N, 1] 형태인 경우 (Sigmoid 확률값) -> 0.5 기준 thresholding
+                if t.ndim == 1 or (t.ndim == 2 and t.shape[1] == 1):
+                    return (t > 0.5).float() 
+                # 2. 차원이 [N, C] 형태인 경우 (Softmax 확률값) -> 가장 높은 확률의 인덱스(argmax)
+                elif t.ndim == 2 and t.shape[1] > 1:
+                    return t.argmax(dim=1).float()
+                return t
+
+            # Concept Predictions 병합 및 이진화
+            if any(self.c_hat_accumulator.values()):
+                final_data.update({
+                    name: to_binary(torch.cat(self.c_hat_accumulator[name], dim=0))
+                    for name in self.c_hat_accumulator if self.c_hat_accumulator[name]
+                })
+            
+            # Task Prediction (Mouth_Slightly_Open) 병합 및 이진화
+            if self.y_hat_accumulator:
+                y_concat = torch.cat(self.y_hat_accumulator, dim=0)
+                # [Modified] y_hat 대신 실제 Task 이름 사용
+                final_data[self.task_name] = to_binary(y_concat)
+
+            pickle.dump(final_data, open("results/c_hat_all.pkl", "wb"))
+            print("Saved all BINARY predictions (concepts + task y_hat) to results/c_hat_all.pkl")
+
+
 
 
 

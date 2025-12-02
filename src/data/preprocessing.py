@@ -20,6 +20,7 @@ from src.data.labelfree_preprocessing import load_pretrained_clip_model, generat
 # from src.completion.concepts_retrieval import concepts_generation, filtering_concepts_from_llm
 from src.data.datasets.synthetic import get_synthetic_datasets, SyntheticDatasetContainer
 
+#input 이미지에 대한 임베딩 생성
 def generate_img_embeddings(dataset: torch.utils.data.Dataset,
                            batch_size: int = 32,
                            device: str = 'cpu',
@@ -105,6 +106,9 @@ def preprocess_dataset(cfg, _dataset, device, backbone) -> dict:
         if cfg.dataset.get('onehot_to_concepts') == True:
             dataset = onehot_to_concepts_ColorMNIST(dataset)
     
+
+
+    #이게 real-world image dataset 전처리 부분
     elif dataset_name in ['celeba', 'celeba_reduced', 'celeba_unfair', 'cub_causal_struct', 'cub']:
         dataset.split()
         if dataset_name in ['cub_causal_struct', 'cub']:
