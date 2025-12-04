@@ -1,0 +1,27 @@
+# Python 3.10 (권장) / 3.9.12 호환
+numpy==1.26.4
+pandas==2.2.2
+matplotlib==3.8.4
+seaborn==0.13.2
+scikit-learn==1.5.0
+scipy==1.10.1
+Pillow==10.3.0
+PyYAML==6.0.1
+networkx==2.8.8
+pytest==7.2.0
+# core deep learning stack
+torch==2.4.0
+torchvision==0.19.0
+torchmetrics==1.4.0.post0
+pytorch_lightning==2.3.0
+# logging/vis & extras
+tensorboard==2.18.0
+tensorboard_data_server==0.7.0
+wandb==0.15.8
+# research libs
+zuko==1.5.0
+sage-importance==0.0.6
+tueplots==0.0.5
+yacs==0.1.8
+lightning
+torch_geometric
