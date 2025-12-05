@@ -113,10 +113,18 @@ def main(cfg: DictConfig) -> None:
 
     # use the graph to define an intervention policy at test time
     #tei 수정 11/29
+    cnf_int_policy = None
     if cfg.policy == 'none':
         interv_policy = []
         ip_names = []
-        print('Intervention policy: None (Disabled)')
+        print(f'Intervention policy: None (Disabled)')
+    elif cfg.policy  in ['cnf_int', 'cnf_cf']:
+        cnf_int_policy = cfg.policy
+        cnf_bundle_path = cfg.cnf_bundle_path
+        interv_policy = []
+        ip_names = []
+        print(f'CNF intervention policy: {cfg.policy}')
+
     else:
         interv_policy, ip_names = get_intervention_policy(cfg.policy, graph, true_graph, y_index)
         print('intervention policy:', interv_policy) #ex)interv_policy = [[0], [2], [4], [1], [3], [5]]
@@ -125,7 +133,7 @@ def main(cfg: DictConfig) -> None:
     # update config based on the dataset
     # e.g., set input and output size of the model
     cfg = update_config_from_data(cfg, dataset)
-    cfg = maybe_update_config_with_graph(cfg, graph, interv_policy)
+    cfg = maybe_update_config_with_graph(cfg, graph, interv_policy, [cnf_int_policy, cnf_bundle_path])
     
     ############ model block ########################################################################################
     [dataset.data[split].register_graph(graph) for split in dataset.data]
@@ -187,7 +195,9 @@ def main(cfg: DictConfig) -> None:
             print(f"  > {split_name}: No concepts found.")
 
     # 파일로 저장
-    save_path = "results/all_ground_truth_concepts.pkl"
+    print("Current working directory:", os.getcwd())
+    os.makedirs('./results', exist_ok=True)
+    save_path = "./results/all_ground_truth_concepts.pkl"
     with open(save_path, 'wb') as f:
         pickle.dump(all_concepts_data, f)
     
@@ -198,18 +208,46 @@ def main(cfg: DictConfig) -> None:
     
     print("DEBUG engine cfg:", cfg.engine)
     print("Trying to instantiate:", cfg.engine._target_)
-    engine = instantiate(cfg.engine)
+    
+    # Check if we should skip training and load from checkpoint
+    test_only = cfg.get("test_only", False)
+    checkpoint_path = cfg.get("checkpoint_path", None)
+    
+    try:
+        engine = instantiate(cfg.engine)
+        print("Engine instantiated successfully")
+    except Exception as e:
+        print(f"ERROR: Failed to instantiate engine: {e}")
+        import traceback
+        traceback.print_exc()
+        raise  # 예외를 다시 발생시켜 프로그램 종료
+
+    print("here")
     try:
         trainer = Trainer(cfg)
         trainer.logger.log_hyperparams(parse_hyperparams(cfg))
-        # ---- train
-        trainer.fit(engine, train_dataloader, val_dataloader)
-        # ---- finetune the encoder (eventually)
-        if cfg.dataset.loader.ftune_size > 0: 
-            trainer, engine = finetune_model(cfg, engine, dataset)
-        # ----- test
-        trainer.test(engine, test_dataloader, ckpt_path='best')
+        
+        if test_only:
+            # Test only mode: skip training and load from checkpoint
+            if checkpoint_path:
+                print(f"Running test only with checkpoint: {checkpoint_path}")
+                # PyTorch Lightning이 checkpoint에서 자동으로 가중치를 로드합니다
+                trainer.test(engine, test_dataloader, ckpt_path=checkpoint_path)
+            else:
+                print("WARNING: test_only=True but checkpoint_path not provided. Using 'best' checkpoint.")
+                trainer.test(engine, test_dataloader, ckpt_path='best')
+        else:
+            # Normal training mode
+            # ---- train
+            trainer.fit(engine, train_dataloader, val_dataloader)
+            # ---- finetune the encoder (eventually)
+            if cfg.dataset.loader.ftune_size > 0: 
+                trainer, engine = finetune_model(cfg, engine, dataset)
+            # ----- test
+            trainer.test(engine, test_dataloader, ckpt_path='best')
+        
         trainer.logger.finalize("success")
+  
     finally:
         if isinstance(trainer.logger, WandbLogger):
             trainer.logger.experiment.finish()

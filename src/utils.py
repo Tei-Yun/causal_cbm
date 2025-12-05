@@ -71,7 +71,7 @@ def update_config_from_data(cfg: DictConfig, dataset) -> DictConfig:
         )
     return cfg
 
-def maybe_update_config_with_graph(cfg: DictConfig, graph, interv_policy) -> DictConfig:
+def maybe_update_config_with_graph(cfg: DictConfig, graph, interv_policy, cnf_int_policy_and_bundle_path = None) -> DictConfig:
     """ can be used to update the config based on the graph """
     if graph is not None:
         if model_is_causal(cfg.model):
@@ -84,6 +84,14 @@ def maybe_update_config_with_graph(cfg: DictConfig, graph, interv_policy) -> Dic
         with open_dict(cfg):
             cfg.engine.update(
                 test_interv_policy = interv_policy
+            )
+    
+    #yeom from causal-flows
+    if cnf_int_policy_and_bundle_path:
+        with open_dict(cfg):
+            cfg.engine.update(
+                cnf_int_policy = cnf_int_policy_and_bundle_path[0],
+                cnf_bundle_path = cnf_int_policy_and_bundle_path[1]
             )
     return cfg
     
@@ -392,3 +400,26 @@ class SCBMPercentileStrategy:
         c_intervened_probs = (0.05 + 0.9 * c_true) * c_mask
         c_intervened_logits = torch.logit(c_intervened_probs, eps=1e-6)
         return c_intervened_logits
+
+
+#[Add] CNF intervention functions
+def post_process(x, binary_dims, binary_min_values, binary_max_values, inplace=False):
+    if not inplace:
+        x = x.clone()
+    x[..., binary_dims] = x[..., binary_dims].floor().float()
+    x[..., binary_dims] = torch.clamp(x[..., binary_dims], min=binary_min_values, max=binary_max_values)
+
+    return x
+
+def add_noise(x):
+    # Calculate the standard deviation of each column
+    std = torch.std(x, dim=0).mul(100).round() / 100.0
+
+    # Find the columns that are constant (i.e., have a standard deviation of 0)
+    constant_mask = std == 0
+    # # Generate a small amount of noise for each constant column
+    # noise = torch.rand(x.shape[0], sum(constant_mask)) * 2.0 - 1.0
+    noise = torch.randn(x.shape[0], sum(constant_mask))
+    # Add the noise to the corresponding columns
+    x[:, constant_mask] += noise * 0.01
+    return x

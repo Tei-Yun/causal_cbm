@@ -55,7 +55,7 @@
 
 
 
-name: tei_c2bm
+name: younsuk_c2bm
 channels:
   - pytorch
   - nvidia
@@ -101,3 +101,4 @@ dependencies:
     - fpdf2
     - python-dotenv
     - requests
+    - pytorch-minimize

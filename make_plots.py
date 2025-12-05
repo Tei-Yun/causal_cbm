@@ -112,14 +112,17 @@ root_result_dir =   {
                         # },
     
                         # # learned graph
-                        'asia': { 
-                            'blackbox':   [f'outputs/multirun/2025-05-14/22-56-37_blackbox_bn/{i}'  for i in [0,5,10,15,20]],   # 5 seeds
-                            # 'blackbox_m': [f'outputs/multirun/2025-05-15/14-45-32_blackbox_multi_bn/{i}'  for i in [0,5,10,15,20]],
-                            'cbm_linear': [f'outputs/multirun/2025-05-14/22-56-44_cbm_linear_bn/{i}'for i in [0,5,10,15,20]],
-                            'cbm_mlp':    [f'outputs/multirun/2025-05-14/22-56-50_cbm_mlp_bn/{i}'   for i in [0,5,10,15,20]],
-                            'cem':        [f'outputs/multirun/2025-05-14/22-56-55_cem_bn/{i}'       for i in [0,5,10,15,20]],
-                            'scbm':       [f'outputs/multirun/2025-05-14/22-57-06_scbm_global_bn/{i}' for i in [0,5,10,15,20]],
-                            'c2bm':       [f'outputs/multirun/2025-05-14/22-57-00_c2bm_bn/{i}'      for i in [0,5,10,15,20]]
+                        # 'asia': { 
+                        #     'blackbox':   [f'outputs/multirun/2025-05-14/22-56-37_blackbox_bn/{i}'  for i in [0,5,10,15,20]],   # 5 seeds
+                        #     # 'blackbox_m': [f'outputs/multirun/2025-05-15/14-45-32_blackbox_multi_bn/{i}'  for i in [0,5,10,15,20]],
+                        #     'cbm_linear': [f'outputs/multirun/2025-05-14/22-56-44_cbm_linear_bn/{i}'for i in [0,5,10,15,20]],
+                        #     'cbm_mlp':    [f'outputs/multirun/2025-05-14/22-56-50_cbm_mlp_bn/{i}'   for i in [0,5,10,15,20]],
+                        #     'cem':        [f'outputs/multirun/2025-05-14/22-56-55_cem_bn/{i}'       for i in [0,5,10,15,20]],
+                        #     'scbm':       [f'outputs/multirun/2025-05-14/22-57-06_scbm_global_bn/{i}' for i in [0,5,10,15,20]],
+                        #     'c2bm':       [f'outputs/multirun/2025-05-14/22-57-00_c2bm_bn/{i}'      for i in [0,5,10,15,20]]
+                        # },
+                        'sachs': { 
+                            'cbm_mlp':    [f'outputs/multirun/2025-12-05/15-16-55_cbm_mlp_bn/{i}'   for i in [0]],
                         },
                         # 'sachs': { 
                         #     'blackbox':   [f'outputs/multirun/2025-05-14/22-56-37_blackbox_bn/{i}'  for i in [1,6,11,16,21]],

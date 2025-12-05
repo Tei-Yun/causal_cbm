@@ -47,15 +47,23 @@ def get_test_intervention_index(c_shape, c_index, values=None):
 #실제 확률 분포 수정(do-operator 적용)
 #intervention_index==1인 concept의 predicted probability를 ground truth one-hot로 교체
 def maybe_intervene(c_pred_probs, c, intervention_index):
+    '''
+    Args:
+        c_pred_probs: predicted probability distribution of the concept, shape: (N, K), K is the cardinality of the concept
+        c: ground truth concept labels, shape: (N, )
+        intervention_index: intervention index, shape: (N, )
+    Returns:
+        c_pred_probs: predicted probability distribution of the concept after intervention
+    '''
     # check if intervention index is not all zeros (non interventions) and ground truth is not all nans (virutal roots)
     if not torch.all(intervention_index == 0) and not torch.all(torch.isnan(c)):
         # check if c is nan where intervention index is not 0
         if torch.any(torch.isnan(c) & (intervention_index != 0)):
             raise ValueError("Intervention with nan ground truth is not allowed")
         concept_cardinality = c_pred_probs.shape[1]
-        index = intervention_index.bool().unsqueeze(1).repeat(1,concept_cardinality)
+        index = intervention_index.bool().unsqueeze(1).repeat(1,concept_cardinality) # single intervention 일 경우, 모두 1 이므로 , 모두 True로...
         c_one_hot = one_hot(c.long(), concept_cardinality)
-        c_pred_probs = torch.where(index, c_one_hot, c_pred_probs)
+        c_pred_probs = torch.where(index, c_one_hot, c_pred_probs) #where(condition, x, y) -> condition이 True면 x, False면 y
     return c_pred_probs
 
 

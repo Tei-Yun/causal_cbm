@@ -5,11 +5,14 @@ import itertools
 import torch
 from torch import nn
 from torchmetrics import Metric, MetricCollection
-#tei 수정 11/29
-from torchmetrics.collections import _remove_prefix
+from torchmetrics.collections import _remove_prefix #tei 수정 11/29
 import pytorch_lightning as pl
 
 from src.models.layers.intervention import get_test_intervention_index
+
+from causalflows.flows import CausalMAF
+from src.utils import post_process, add_noise
+
 
 
 class Predictor(pl.LightningModule):    
@@ -22,11 +25,11 @@ class Predictor(pl.LightningModule):
                 scheduler_kwargs: Optional[Mapping] = None,
                 intervention_prob: Optional[float] = 0.2,
                 c_names: Optional[list] = None,
-                #tei 수정 11/29
-                # [Add] Task 이름 인자 추가
-                task_name: Optional[str] = 'y_hat',
+                task_name: Optional[str] = 'y_hat', # [Add] Task 이름 인자 추가
                 test_interv_policy: Optional[str] = None,
                 test_interv_noise: Optional[float] = 0.,
+                cnf_int_policy: Optional[str] = None, # [Add] CNF intervention policy
+                cnf_bundle_path: Optional[str] = None,
                 ):
         super(Predictor, self).__init__()         
         self.model = model
@@ -49,10 +52,27 @@ class Predictor(pl.LightningModule):
         ## [Fix] test_interv_policy가 None이면 빈 리스트로 초기화 (len() 에러 방지)
         if self.test_interv_policy is None:
             self.test_interv_policy = []
+        
+
+        #[Add] from causal-flows
+        self.cnf_int_policy = cnf_int_policy # cnf_int or cnf_cf
+        self.cnf_bundle_path = cnf_bundle_path
+        assert not (self.cnf_int_policy is not None and self.cnf_bundle_path is None), "CNF bundle path is required for CNF intervention"
+        if self.cnf_int_policy is not None:
+            bundle = torch.load(self.cnf_bundle_path, map_location="cpu")
+            self.cnf_flow = CausalMAF(bundle["features"], bundle["context"], adjacency=bundle["adjacency"])
+            self.cnf_flow.load_state_dict(bundle["state_dict"])
+            self.cnf_flow.eval()
+            self.topo_order_idx = bundle["topo_order_idx"]
+            self.original_order = bundle["original_order"]
+            self.topological_order = bundle["topological_order"]
+            self.binary_dims = bundle["binary_dims"]
+            self.binary_min_values = bundle["binary_min_values"]
+            self.binary_max_values = bundle["binary_max_values"]
+
+
 
         self.test_interv_noise = test_interv_noise  
-
-
         self.c_names = c_names
         self.n_concepts = len(c_names)
 
@@ -149,6 +169,17 @@ class Predictor(pl.LightningModule):
                 prefix="test_intervention/level/c/")
             
 
+            # yeom from causal-flows
+            # --- CNF intervention metrics ---
+            self.test_intervention_cnf_int = MetricCollection(
+                metrics={k: self._check_metric(m) for k, m in c_acc_metrics.items()},
+                prefix="test_intervention/cnf_int/")
+
+            # --- CNF counterfactual metrics ---
+            self.test_intervention_cnf_cf = MetricCollection(
+                metrics={k: self._check_metric(m) for k, m in c_acc_metrics.items()},
+                prefix="test_intervention/cnf_cf/")
+
             # --- fairness metrics ---
             self.cace = MetricCollection(
                 metrics = {'before': self._check_metric(metrics.get('cace')),
@@ -208,6 +239,7 @@ class Predictor(pl.LightningModule):
             if self.test_interv_noise > 0:
                 x = x + torch.randn_like(x) * self.test_interv_noise
 
+            print("BASELINE : NO INTERVENTION")
             # baseline task accuracy
             # do not intervene
             intervention_index = get_test_intervention_index(c.shape, [])
@@ -220,6 +252,7 @@ class Predictor(pl.LightningModule):
             self.test_intervention_single_y['_baseline'].update(y_hat, y)            
 
             # interventions on individual concepts
+            print("INTERVENTION ON INDIVIDUAL CONCEPTS")
             for i, c_name_i in enumerate(self.c_names):
                 if c_name_i in self.model.virtual_roots: continue
                 # intervene on concept c_name_i
@@ -227,10 +260,32 @@ class Predictor(pl.LightningModule):
                 inputs = {'x':x, 'c':c, 'intervention_index':intervention_index}
                 # forward pass with intervention at test time
                 y_output, c_output = self.forward(**inputs)
-                y_hat, c_hat = self.model.filter_output_for_metric(y_output, c_output)
+                y_hat, c_hat = self.model.filter_output_for_metric(y_output, c_output) #scbm만 조금 다르고, 나머지는 input 그대로 output
                 # update metric after intervention:
                 # after interveening on concept c_name_i, how well can we predict y?
                 self.test_intervention_single_y[c_name_i].update(y_hat, y)
+
+
+            
+
+            if self.cnf_int_policy == 'cnf_int':
+                print("INTERVENTION ON CONCEPTS BY CNF")
+                for i, c_name_i in enumerate(self.c_names):
+                    if c_name_i in self.model.virtual_roots: continue
+           
+                    '''
+                    [DISCUSSION] : Get intervened instances one by one? (intervene with ground truth?)
+                    '''
+                    pass
+
+            if self.cnf_int_policy == 'cnf_cf':
+                print("COUNTERFACTUAL INTERVENTION BY CNF")
+                pass
+
+
+
+            if len(self.test_interv_policy) > 0:
+                print("INTERVENTION on POLICY LEVELS")
 
             # level intervention
             for l in range(0, len(self.test_interv_policy)+1):
