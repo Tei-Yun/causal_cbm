@@ -100,7 +100,7 @@ def main(cfg: DictConfig) -> None:
     graph, dataset = remove_problematic_edges(graph, dataset)
 
     #y_index 는 DAG에서 task 노드 위치 => 반드시 마지막 노드여야 한다고 assert로 강제하는 코드
-    y_index = list(graph.index).index(dataset.y_info['names'][0]); assert y_index == len(graph) - 1
+    y_index = list(graph.index).index(dataset.y_info['names'][0]); assert y_index == len(graph) - 1, f"y_index: {y_index} is not the last node"
 
     
     # (part 2): remove cycles
@@ -114,6 +114,7 @@ def main(cfg: DictConfig) -> None:
     # use the graph to define an intervention policy at test time
     #tei 수정 11/29
     cnf_int_policy = None
+    cnf_bundle_path = None
     if cfg.policy == 'none':
         interv_policy = []
         ip_names = []

@@ -25,16 +25,20 @@ def get_dataset(cfg):
 
     destination_path = os.path.join(dataset_directory, f"preprocessed_dataset_{cfg.seed}.pkl") # '.cache\에 저장
     if cfg.dataset.get('load_embeddings') == False:
+
+        
         dataset = instantiate(cfg.dataset.loader)
         dataset = preprocess_dataset(cfg, 
-                                     dataset, 
-                                     device=cfg.device,
-                                     backbone=cfg.dataset.backbone)
+                                    dataset, 
+                                    device=cfg.device,
+                                    backbone=cfg.dataset.backbone)
         with open(destination_path, 'wb') as f: 
             pickle.dump(dataset, f)
+
     else:
         with open(destination_path, 'rb') as f: 
             dataset = pickle.load(f)
+
     
     true_graph = dataset.load_ground_truth_graph()
     maybe_plot_graph(true_graph, 'true_graph')

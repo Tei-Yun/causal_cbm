@@ -123,7 +123,7 @@ def preprocess_dataset(cfg, _dataset, device, backbone) -> dict:
                                           backbone=backbone)         
 
     elif dataset_name in ['asia', 'asia_reduced', 'alarm', 'alarm_reduced', \
-                          'sachs', 'sachs_reduced', 'hailfinder', 'insurance']:
+                          'sachs', 'sachs_reduced', 'hailfinder', 'insurance', 'sachs_incomplete']:
         dataset = maybe_reduce(cfg.dataset.get('reduce_fraction', None), dataset)
         
         all_var = dataset.c_info_complete['names'] + dataset.y_info['names'] # variables have been reordered
