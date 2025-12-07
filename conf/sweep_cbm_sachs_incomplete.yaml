@@ -10,7 +10,7 @@ defaults:
 hydra:
   mode: MULTIRUN
   sweep:
-    dir: "outputs/multirun/${now:%Y-%m-%d}/${now:%H-%M-%S}_sachs_complete_soft"
+    dir: "outputs/multirun/${now:%Y-%m-%d}/${now:%H-%M-%S}_sachs_incomplete2_soft"
   sweeper:
     # standard grid search
     grid_params:
@@ -23,7 +23,7 @@ hydra:
       seed: 1
     # additional list sweeper
     list_params:
-      dataset: sachs
+      dataset: sachs_incomplete
       model.hidden_size:      [64]    
       model.concept_loss_weight: [0.01]  
       engine.optim_kwargs.lr: [0.00075]
@@ -37,7 +37,7 @@ checkpoint_path: "/home/younsuk/causal_cbm/outputs/multirun/2025-12-05/15-16-55_
 
 
 dataset:
-  load_embeddings: true
+  load_embeddings: false
   load_graph: false
   load_true_graph: true
   batch_size: 512  # 128 (Pneumo, all SCBM), 512 (all others)
