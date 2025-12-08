@@ -1,4 +1,5 @@
 import numpy as np
+import torch
 '''
 reference :https://github.com/enricoparisini/xai-concept-leakage/tree/main
 Parisini, Enrico, et al. "Leakage and interpretability in concept-based models." arXiv preprint arXiv:2504.14094 (2025).

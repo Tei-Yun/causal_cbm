@@ -187,3 +187,68 @@ def compute_ctl_icl(c_hat, c_true, y_true, n_neighbors=3):
         "ICL_i": ICL_i,       # (d,)
         "ICL": ICL,           # scalar
     }
+
+import torch
+import scipy.stats as stats
+
+def compute_kernel(x, y, kernel_type="rbf", sigma=None):
+   
+    if kernel_type == "rbf":
+      
+        dist = torch.cdist(x, y, p=2)
+        return torch.exp(-(dist**2) / (2*sigma**2)) 
+    else:
+        raise ValueError(f"Unsupported kernel type: {kernel_type}")
+
+
+def maximum_mean_discrepancy(x, y, kernel_type="rbf", sigma=None):
+    """
+    Compute the Maximum Mean Discrepancy (MMD) between two sets of samples x and y.
+
+    Args:
+        x (Tensor): A PyTorch tensor of shape (n_x, d), where n_x is the number of samples in x and d is the dimension.
+        y (Tensor): A PyTorch tensor of shape (n_y, d), where n_y is the number of samples in y and d is the dimension.
+        kernel_type (str): The type of kernel to use. Currently, only 'rbf' (Radial Basis Function) is supported.
+        sigma (float, optional): The bandwidth parameter for the RBF kernel. If None, it will be estimated using the median heuristic.
+
+    Returns:
+        float: The MMD value between x and y.
+    """
+    x =x.cpu()
+    y =y.cpu()
+
+
+    if sigma is None:
+        '''
+        kernel bandwidth is set at the median distance between points in the aggregate sample over p and q.
+        Gretton et al. 2012
+        '''
+        all_samples = torch.cat((x, y), dim=0)
+        sigma = torch.median(torch.pdist(all_samples)) 
+
+    k_xx = compute_kernel(x, x, kernel_type, sigma)
+    k_yy = compute_kernel(y, y, kernel_type, sigma)
+    k_xy = compute_kernel(x, y, kernel_type, sigma)
+
+    mmd = torch.mean(k_xx) + torch.mean(k_yy) - 2 * torch.mean(k_xy)
+    return mmd
+
+def wasserstein_dist_1d(x, y):
+    '''
+    \[l_1(u, v) = \inf_{\pi \in \Gamma(u,v)} \int_{\Omega \times \Omega} |x - y| d\pi(x, y),\]
+    where Γ(u, v) is the joint probability distributions for the groundtruth and learned counterfactual distributions, 
+    and Ω is the space of each distribution.
+
+    Compute the 1-Wasserstein distance between two 1D empirical distributions.
+        Args:
+            x (Tensor): 1D tensor of samples from distribution U.
+            y (Tensor): 1D tensor of samples from distribution V.
+
+    Returns:
+        float: The 1-Wasserstein distance between x and y.
+    '''
+
+    x = x.cpu()
+    y = y.cpu()
+    return torch.tensor(stats.wasserstein_distance(x, y), dtype=torch.float32)
+
