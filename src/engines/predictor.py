@@ -11,8 +11,8 @@ import pytorch_lightning as pl
 from src.models.layers.intervention import get_test_intervention_index
 
 from causalflows.flows import CausalMAF
-from src.utils import post_process, add_noise
-
+from src.utils import post_process, add_noise, make_cf_batch, get_c_hat_tensor, make_int_batch, to_binary
+import copy
 
 
 class Predictor(pl.LightningModule):    
@@ -62,7 +62,8 @@ class Predictor(pl.LightningModule):
             bundle = torch.load(self.cnf_bundle_path, map_location="cpu")
             self.cnf_flow = CausalMAF(bundle["features"], bundle["context"], adjacency=bundle["adjacency"])
             self.cnf_flow.load_state_dict(bundle["state_dict"])
-            self.cnf_flow.eval()
+            self.cnf_flow = self.cnf_flow.to("cpu").eval()
+            self.cnf_flow_loaded = self.cnf_flow()
             self.topo_order_idx = bundle["topo_order_idx"]
             self.original_order = bundle["original_order"]
             self.topological_order = bundle["topological_order"]
@@ -169,16 +170,14 @@ class Predictor(pl.LightningModule):
                 prefix="test_intervention/level/c/")
             
 
-            # yeom from causal-flows
-            # --- CNF intervention metrics ---
-            self.test_intervention_cnf_int = MetricCollection(
-                metrics={k: self._check_metric(m) for k, m in c_acc_metrics.items()},
-                prefix="test_intervention/cnf_int/")
-
             # --- CNF counterfactual metrics ---
             self.test_intervention_cnf_cf = MetricCollection(
                 metrics={k: self._check_metric(m) for k, m in c_acc_metrics.items()},
                 prefix="test_intervention/cnf_cf/")
+
+            self.test_intervention_cnf_int = MetricCollection(
+                metrics={k: self._check_metric(m) for k, m in c_acc_metrics.items()},
+                prefix="test_intervention/cnf_int/")
 
             # --- fairness metrics ---
             self.cace = MetricCollection(
@@ -233,6 +232,11 @@ class Predictor(pl.LightningModule):
         return intervention_index.to("cuda" if torch.cuda.is_available() else "cpu")
     
     def test_intervention(self, batch):
+        with torch.no_grad():
+            self.cnf_flow = self.cnf_flow.to("cpu").eval()
+            self.cnf_flow_loaded = self.cnf_flow()
+
+
         if self.model.has_concepts:
             x, c, y = self._unpack_batch(batch)
             # maybe add noise
@@ -247,6 +251,8 @@ class Predictor(pl.LightningModule):
             # forward pass with intervention at test time
             y_output, c_output = self.forward(**inputs)
             y_hat, c_hat = self.model.filter_output_for_metric(y_output, c_output)
+
+            c_hat_factual = copy.deepcopy(c_hat)
             # update metric after intervention:
             # how well can we predict y?
             self.test_intervention_single_y['_baseline'].update(y_hat, y)            
@@ -268,21 +274,50 @@ class Predictor(pl.LightningModule):
 
             
 
-            if self.cnf_int_policy == 'cnf_int':
-                print("INTERVENTION ON CONCEPTS BY CNF")
+            if self.cnf_int_policy == 'cnf_cf':
+                print("INTERVENTION ON CONCEPTS BY CNF (CF)")
                 for i, c_name_i in enumerate(self.c_names):
                     if c_name_i in self.model.virtual_roots: continue
            
                     '''
-                    [DISCUSSION] : Get intervened instances one by one? (intervene with ground truth?)
+                    [Causal intervention] : single concept intervention using cauasl-flows
                     '''
-                    pass
-
-            if self.cnf_int_policy == 'cnf_cf':
-                print("COUNTERFACTUAL INTERVENTION BY CNF")
-                pass
-
-
+                    intervention_index = torch.ones(c.shape, device=c.device)
+                    c_tensor_topo = batch['complete_c'][:, self.topo_order_idx]
+                    c_hat_tensor = get_c_hat_tensor(self.topological_order, c_hat_factual, c_tensor_topo)
+                    c_hat_cf_topo = make_cf_batch(c_hat_tensor.to("cpu"), 
+                                                    index=i, 
+                                                    c=c_tensor_topo.to("cpu"), 
+                                                    binary_dims=self.binary_dims, 
+                                                    binary_min_values=self.binary_min_values.to("cpu"), 
+                                                    binary_max_values=self.binary_max_values.to("cpu"), 
+                                                    flow_loaded=self.cnf_flow_loaded)
+                    incomplete_idx = [self.topological_order.index(n) for n in self.c_names] # original order index of selected concepts
+                    c_hat_cf = c_hat_cf_topo[:, incomplete_idx].to(c.device) # rearrange to original order
+                    inputs = {'x':x, 'c':c_hat_cf, 'intervention_index':intervention_index}
+                    y_output, c_output = self.forward(**inputs)
+                    y_hat, c_hat = self.model.filter_output_for_metric(y_output, c_output)
+                    self.test_intervention_cnf_cf[c_name_i].update(y_hat, y)
+            
+            
+            if self.cnf_int_policy == 'cnf_int':
+                print("INTERVENTION ON CONCEPTS BY CNF (INT)")
+                for i, c_name_i in enumerate(self.c_names):
+                    if c_name_i in self.model.virtual_roots: continue
+                    intervention_index = torch.ones(c.shape, device=c.device)
+                    c_tensor_topo = batch['complete_c'][:, self.topo_order_idx] 
+                    c_hat_int_topo = make_int_batch(index=i, 
+                                                    c=c_tensor_topo.to("cpu"), 
+                                                    binary_dims=self.binary_dims, 
+                                                    binary_min_values=self.binary_min_values.to("cpu"), 
+                                                    binary_max_values=self.binary_max_values.to("cpu"), 
+                                                    flow_loaded=self.cnf_flow_loaded)
+                    incomplete_idx = [self.topological_order.index(n) for n in self.c_names] # original order index of selected concepts
+                    c_hat_int = c_hat_int_topo[:, incomplete_idx].to(c.device) # rearrange to original order
+                    inputs = {'x':x, 'c':c_hat_int, 'intervention_index':intervention_index}
+                    y_output, c_output = self.forward(**inputs)
+                    y_hat, c_hat = self.model.filter_output_for_metric(y_output, c_output)
+                    self.test_intervention_cnf_int[c_name_i].update(y_hat, y)
 
             if len(self.test_interv_policy) > 0:
                 print("INTERVENTION on POLICY LEVELS")
@@ -447,6 +482,25 @@ class Predictor(pl.LightningModule):
                 print(f"Task accuracy after intervention on {c_name}: {y_int[c_name]}")
             pickle.dump(y_int, open(f'results/single_c_interventions_on_y.pkl', 'wb'))
 
+            # CNF counterfactual task accuracy
+            y_int = {}
+            for k, metric in self.test_intervention_cnf_cf.items():
+                c_name = _remove_prefix(k, self.test_intervention_cnf_cf.prefix)
+                y_int[c_name] = metric.compute().item()
+                print(f"Task accuracy after CNF(CF) on {c_name}: {y_int[c_name]}")
+            pickle.dump(y_int, open(f'results/cnf_cf_interventions_on_y.pkl', 'wb'))
+
+
+            # CNF interventional task accuracy
+            y_int = {}
+            for k, metric in self.test_intervention_cnf_int.items():
+                c_name = _remove_prefix(k, self.test_intervention_cnf_int.prefix)
+                y_int[c_name] = metric.compute().item()
+                print(f"Task accuracy after CNF(INT) on {c_name}: {y_int[c_name]}")
+            pickle.dump(y_int, open(f'results/cnf_int_interventions_on_y.pkl', 'wb'))
+
+
+
             # task accuracy after intervention of each policy level
             y_int = {}
             for k, metric in self.test_intervention_level_y.items():
@@ -475,16 +529,7 @@ class Predictor(pl.LightningModule):
         # [Modified] c_hat 뿐만 아니라 y_hat도 함께 저장하도록 수정
         if any(self.c_hat_accumulator.values()) or self.y_hat_accumulator:
             final_data = {}
-            
-            # [Add] 이진화 변환 함수 (확률 -> 0 or 1)
-            def to_binary(t):
-                # 1. 차원이 1개거나 [N, 1] 형태인 경우 (Sigmoid 확률값) -> 0.5 기준 thresholding
-                if t.ndim == 1 or (t.ndim == 2 and t.shape[1] == 1):
-                    return (t > 0.5).float() 
-                # 2. 차원이 [N, C] 형태인 경우 (Softmax 확률값) -> 가장 높은 확률의 인덱스(argmax)
-                elif t.ndim == 2 and t.shape[1] > 1:
-                    return t.argmax(dim=1).float()
-                return t
+     
 
             # Concept Predictions 병합 및 이진화
             if any(self.c_hat_accumulator.values()):

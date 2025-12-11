@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 from src.models.layers.base import MLP
 from src.models.layers.intervention import maybe_intervene
-
+from src.utils import to_binary, _to_column_tensor
 class CBM(nn.Module):
     """
     Concept bottleneck model. It predicts both task and concept labels.
@@ -54,6 +54,12 @@ class CBM(nn.Module):
                                n_layers=n_layers_decoder,
                                activation=activation,
                                dropout=dropout)
+            self.decoder_binary = MLP(input_size=len(self.filtered_c_info['names']),
+                    hidden_size=len(self.filtered_c_info['names'])//2,
+                    output_size=output_size,
+                    n_layers=n_layers_decoder,
+                    activation='leaky_relu',
+                    dropout=dropout)
         elif decoder_type == 'linear':
             self.decoder = nn.Linear(sum(self.filtered_c_info['cardinality']), 
                                      output_size)
@@ -79,6 +85,7 @@ class CBM(nn.Module):
                 c_hat_probs[name] = maybe_intervene(c_hat_probs[name], filtered_c[:,i], filtered_intervention_index[:,i])
         
         c_probs_concat = torch.cat(list(c_hat_probs.values()), dim=1)
+
         # Task predictions
         y_hat_logits = self.decoder(c_probs_concat)
         y_hat_probs = torch.softmax(y_hat_logits, dim=1)

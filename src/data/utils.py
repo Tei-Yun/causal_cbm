@@ -13,6 +13,7 @@ def static_graph_collate(batch):
         "x": torch.stack([item["x"] for item in batch]),
         "c": torch.stack([item["c"] for item in batch]),
         "y": torch.stack([item["y"] for item in batch]),
+        "complete_c": torch.stack([item["complete_c"] for item in batch]),
         "graph": batch[0]["graph"],  # Add the graph once
     }
 

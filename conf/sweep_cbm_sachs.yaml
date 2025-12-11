@@ -10,7 +10,7 @@ defaults:
 hydra:
   mode: MULTIRUN
   sweep:
-    dir: "outputs/multirun/${now:%Y-%m-%d}/${now:%H-%M-%S}_sachs_complete_soft"
+    dir: "outputs/multirun/${now:%Y-%m-%d}/${now:%H-%M-%S}_sachs_complete_cnf_cf"
   sweeper:
     # standard grid search
     grid_params:
@@ -25,16 +25,15 @@ hydra:
     list_params:
       dataset: sachs
       model.hidden_size:      [64]    
-      model.concept_loss_weight: [0.01]  
+      model.concept_loss_weight: [0.8]  
       engine.optim_kwargs.lr: [0.00075]
 
-policy: none #none, levels_true, levels_pred, nodes_true, nodes_pred, random + cnf_int, cnf_cf
+policy: cnf_cf #none, levels_true, levels_pred, nodes_true, nodes_pred, random , cnf_cf
 cnf_bundle_path: '/home/younsuk/causal_cbm/CNF_notebooks/cnf_bundle.pt'
 
 # Test only mode: set test_only=true and provide checkpoint_path to skip training
 test_only: false
-checkpoint_path: "/home/younsuk/causal_cbm/outputs/multirun/2025-12-05/15-16-55_cbm_mlp_bn/0/checkpoints/epoch=73-step=1036.ckpt"
-
+checkpoint_path: /home/younsuk/causal_cbm/outputs/multirun/2025-12-09/16-30-46_sachs_complete_soft_cnf_cf/0/checkpoints/epoch=12-step=182.ckpt
 
 dataset:
   load_embeddings: true
@@ -46,8 +45,8 @@ dataset:
   num_workers: 0
 
 engine:
-  intervention_prob: 0.8
-  test_interv_noise: 0.8   # for bndatasets only
+  intervention_prob: 0
+  test_interv_noise: 0 # 0.8   # for bndatasets only
 
 trainer:
   logger: null  # wandb, null

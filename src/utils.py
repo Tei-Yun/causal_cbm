@@ -288,9 +288,10 @@ def check_graph(graph_levels, true_graph):
                 assert node_index > parent_index, \
                 f"Parent {parent} appear after their children {node} in the graph level {level}"
 
-            # check at least one parent is in the previous level
-            assert any([p in levels[levels.index(level)-1] for p in parents]), \
-                f"At least one parent of {node} should be in the previous level"
+            # check all parents are in the previous level (consistent with get_levels logic)
+            previous_level = levels[levels.index(level)-1]
+            assert set(parents).issubset(set(previous_level)), \
+                f"All parents of {node} should be in the previous level"
 
             # check if the position of the nodes in the graph levels correspond to
             # the number of edges to a root
@@ -407,7 +408,7 @@ def post_process(x, binary_dims, binary_min_values, binary_max_values, inplace=F
     if not inplace:
         x = x.clone()
     x[..., binary_dims] = x[..., binary_dims].floor().float()
-    x[..., binary_dims] = torch.clamp(x[..., binary_dims], min=binary_min_values, max=binary_max_values)
+    x[..., binary_dims] = torch.clamp(x[..., binary_dims], min=binary_min_values.to(x.device), max=binary_max_values.to(x.device))
 
     return x
 
@@ -423,3 +424,90 @@ def add_noise(x):
     # Add the noise to the corresponding columns
     x[:, constant_mask] += noise * 0.01
     return x
+
+
+def _to_column_tensor(x):
+    t = torch.as_tensor(x)
+    if t.ndim == 2 and t.shape[1] == 1:
+        t = t.squeeze(1)
+    return t.float().view(-1, 1)
+
+def get_c_hat_tensor(topological_order, c_hat, c_tensor_topo):
+    '''
+    from c_hat dictionary, get the tensor of the concept labels for the topological order
+    even the c_hat is incomplete, make it complete by adding the alternative(zero / true) concept
+    '''
+    c_hat_cols = []
+    for i, name in enumerate(topological_order):
+        if name in c_hat:
+            c_hat_cols.append(_to_column_tensor(to_binary(c_hat[name])))
+        else:
+            c_hat_cols.append(c_tensor_topo[:, i].view(-1, 1))
+    c_hat_tensor = torch.cat(c_hat_cols, dim=1)
+    return c_hat_tensor
+
+def to_binary(t):
+    # 1. 차원이 1개거나 [N, 1] 형태인 경우 (Sigmoid 확률값) -> 0.5 기준 thresholding
+    if t.ndim == 1 or (t.ndim == 2 and t.shape[1] == 1):
+        return (t > 0.5).float() 
+    # 2. 차원이 [N, C] 형태인 경우 (Softmax 확률값) -> 가장 높은 확률의 인덱스(argmax)
+    elif t.ndim == 2 and t.shape[1] > 1:
+        return t.argmax(dim=1).float()
+    return t
+
+
+def make_cf_batch(c_hat, index, c, binary_dims, binary_min_values, binary_max_values, flow_loaded):
+    '''
+    c_hat : predicted concept labels
+    index : index of the concept to intervene
+    c : intervention value (true values)
+
+    return : counterfactual concept binary labels (after quantization)
+    '''
+
+    # dequantization first
+    c_hat_deq = c_hat.clone()
+    torch.manual_seed(42)
+    c_hat_deq[:, binary_dims] = c_hat_deq[:, binary_dims] + torch.rand_like(c_hat_deq[:, binary_dims])
+    N = c_hat_deq.shape[0]
+
+    
+    # 랜덤 값들을 미리 배치로 생성 (텐서 연산으로 효율화)
+    random_values = torch.rand(N, 1, device=c_hat_deq.device, dtype=c_hat_deq.dtype)
+    intervention_values = (c[:, index:index+1] + random_values).squeeze(1)  # (N, 1) 형태로 유지
+
+
+    c_hat_deq_cf = []
+    for i in range(N):
+        cf = flow_loaded.compute_counterfactual(
+            c_hat_deq[i].view(1, -1), 
+            index=index, 
+            value=intervention_values[i]
+        ).detach()
+        c_hat_deq_cf.append(cf)
+
+    c_hat_deq_cf = torch.cat(c_hat_deq_cf, dim=0)
+    c_hat_cf = post_process(c_hat_deq_cf, binary_dims, binary_min_values, binary_max_values)
+    return c_hat_cf
+
+def make_int_batch(index, c, binary_dims, binary_min_values, binary_max_values, flow_loaded):
+    '''
+    c_hat : predicted concept labels
+    index : index of the concept to intervene
+    c : intervention value
+
+    return : interventional concept binary labels (after quantization)
+    '''
+
+    N = c.shape[0]
+    torch.manual_seed(42)
+    random_values = torch.rand(N, 1, device=c.device, dtype=c.dtype)
+    intervention_values = (c[:, index:index+1] + random_values).squeeze(1)  # (N, 1) 형태로 유지
+
+    c_hat_deq_int = []
+    for i in range(N):
+        int_i = flow_loaded.sample_interventional(index=index, value=intervention_values[i], sample_shape = (1,))
+        c_hat_deq_int.append(int_i)
+    c_hat_deq_int = torch.cat(c_hat_deq_int, dim=0)
+    c_hat_int = post_process(c_hat_deq_int, binary_dims, binary_min_values, binary_max_values)
+    return c_hat_int

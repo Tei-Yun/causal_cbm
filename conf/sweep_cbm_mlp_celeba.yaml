@@ -39,8 +39,7 @@ policy: nodes_true # levels_true, levels_pred, nodes_true, nodes_pred, random
 #olicy: none  # <--- 기존 nodes_true 또는 all 에서 none 으로 변경
 
 dataset:
-  #load_embeddings: false
-  load_embeddings: true
+  load_embeddings: false
   load_graph: true        # <--- 여기를 true로 변경 (저장된 graph.pkl 로드)
   load_true_graph: false  # <--- 여기는 false 유지 (코드 상의 True Graph 사용 안 함)
   # batch_size: 512  # 128 (Pneumo, all SCBM), 512 (all others)

@@ -10,7 +10,7 @@ defaults:
 hydra:
   mode: MULTIRUN
   sweep:
-    dir: "outputs/multirun/${now:%Y-%m-%d}/${now:%H-%M-%S}_sachs_incomplete3_soft"
+    dir: "outputs/multirun/${now:%Y-%m-%d}/${now:%H-%M-%S}_cem_sachs_incomplete3_soft"
   sweeper:
     # standard grid search
     grid_params:
@@ -19,21 +19,20 @@ hydra:
       # colormnist, colormnist_ood, celeba, celeba_unfair, siim_pneumothorax
       # possible models are:
       # blackbox, blackbox_multi, cbm_linear, cbm_mlp, cem, c2bm
-      model: cbm_mlp
+      model: cem
       seed: 1
     # additional list sweeper
     list_params:
       dataset: sachs_incomplete
-      model.hidden_size:      [64]    
-      model.concept_loss_weight: [0.01]  
-      engine.optim_kwargs.lr: [0.00075]
+      model.hidden_size:      [32]
+      model.concept_loss_weight: [0.01]
+      model.concept_hidden_size: [4]
+      model.dropout:          [0.5]
+      engine.optim_kwargs.lr: [0.0004]
 
-policy: none #none, levels_true, levels_pred, nodes_true, nodes_pred, random + cnf_int, cnf_cf
-cnf_bundle_path: '/home/younsuk/causal_cbm/CNF_notebooks/cnf_bundle.pt'
+policy: none # levels_true, levels_pred, nodes_true, nodes_pred, random
 
-# Test only mode: set test_only=true and provide checkpoint_path to skip training
 test_only: false
-checkpoint_path: "/home/younsuk/causal_cbm/outputs/multirun/2025-12-05/15-16-55_cbm_mlp_bn/0/checkpoints/epoch=73-step=1036.ckpt"
 
 
 dataset:
@@ -51,10 +50,9 @@ engine:
 
 trainer:
   logger: null  # wandb, null
-  devices: [0]
+  devices: [2]
   max_epochs: 500
   patience: 30
-
 
 # rag:
 #   verbose: false

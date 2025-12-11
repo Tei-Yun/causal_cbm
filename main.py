@@ -119,7 +119,7 @@ def main(cfg: DictConfig) -> None:
         interv_policy = []
         ip_names = []
         print(f'Intervention policy: None (Disabled)')
-    elif cfg.policy  in ['cnf_int', 'cnf_cf']:
+    elif cfg.policy in ['cnf_cf', 'cnf_int', 'cnf_prob_cf']:
         cnf_int_policy = cfg.policy
         cnf_bundle_path = cfg.cnf_bundle_path
         interv_policy = []
@@ -223,7 +223,7 @@ def main(cfg: DictConfig) -> None:
         traceback.print_exc()
         raise  # 예외를 다시 발생시켜 프로그램 종료
 
-    print("here")
+    
     try:
         trainer = Trainer(cfg)
         trainer.logger.log_hyperparams(parse_hyperparams(cfg))

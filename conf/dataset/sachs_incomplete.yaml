@@ -12,7 +12,7 @@ loader:
     test_size: 0.2
     ftune_size: 0.      
     ftune_val_size: 0.
-    to_keep: ["PIP3", "PIP2", "Plcg", "Akt"]
+    to_keep: ["Erk", "PKA", "Mek", "PKC", "Raf", "Akt"]
     bias:
         train:
             mode: false   #False / custom
