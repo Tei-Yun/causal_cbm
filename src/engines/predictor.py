@@ -232,9 +232,10 @@ class Predictor(pl.LightningModule):
         return intervention_index.to("cuda" if torch.cuda.is_available() else "cpu")
     
     def test_intervention(self, batch):
-        with torch.no_grad():
-            self.cnf_flow = self.cnf_flow.to("cpu").eval()
-            self.cnf_flow_loaded = self.cnf_flow()
+        if hasattr(self, 'cnf_flow'):
+            with torch.no_grad():
+                self.cnf_flow = self.cnf_flow.to("cpu").eval()
+                self.cnf_flow_loaded = self.cnf_flow()
 
 
         if self.model.has_concepts:
@@ -283,7 +284,7 @@ class Predictor(pl.LightningModule):
                     [Causal intervention] : single concept intervention using cauasl-flows
                     '''
                     intervention_index = torch.ones(c.shape, device=c.device)
-                    c_tensor_topo = batch['complete_c'][:, self.topo_order_idx]
+                    c_tensor_topo = batch['complete_c'][:, self.topo_order_idx] if 'complete_c' in batch else batch['c'][:, self.topo_order_idx]
                     c_hat_tensor = get_c_hat_tensor(self.topological_order, c_hat_factual, c_tensor_topo)
                     c_hat_cf_topo = make_cf_batch(c_hat_tensor.to("cpu"), 
                                                     index=i, 
@@ -299,13 +300,45 @@ class Predictor(pl.LightningModule):
                     y_hat, c_hat = self.model.filter_output_for_metric(y_output, c_output)
                     self.test_intervention_cnf_cf[c_name_i].update(y_hat, y)
             
-            
+            if self.cnf_int_policy == 'cnf_prob_cf':
+                print("INTERVENTION ON CONCEPTS BY CNF (PROB CF)")
+                for i, c_name_i in enumerate(self.c_names):
+                    if c_name_i in self.model.virtual_roots: continue
+           
+                    '''
+                    [Causal intervention] : single concept intervention using cauasl-flows
+                    '''
+                    intervention_index = torch.ones(c.shape, device=c.device)
+                    c_tensor_topo = batch['complete_c'][:, self.topo_order_idx] if 'complete_c' in batch else batch['c'][:, self.topo_order_idx]
+                    c_hat_tensor = get_c_hat_tensor(self.topological_order, c_hat_factual, c_tensor_topo, prob_values=True) # probabliity values
+                    c_hat_cf_topo = make_cf_batch(c_hat_tensor.to("cpu"), 
+                                                    index=i, 
+                                                    c=c_tensor_topo.to("cpu"), 
+                                                    binary_dims=self.binary_dims, 
+                                                    binary_min_values=self.binary_min_values.to("cpu"), 
+                                                    binary_max_values=self.binary_max_values.to("cpu"), 
+                                                    flow_loaded=self.cnf_flow_loaded,
+                                                    prob_values=True)
+                    incomplete_idx = [self.topological_order.index(n) for n in self.c_names] # original order index of selected concepts
+                    c_hat_cf = c_hat_cf_topo[:, incomplete_idx].to(c.device) # rearrange to original order
+                    inputs = {'x':x, 'c':c_hat_cf, 'intervention_index':intervention_index}
+                    y_output, c_output = self.forward(**inputs)
+                    y_hat, c_hat = self.model.filter_output_for_metric(y_output, c_output)
+                    self.test_intervention_cnf_cf[c_name_i].update(y_hat, y)      
+
+
+
+
+
+
+
+
             if self.cnf_int_policy == 'cnf_int':
                 print("INTERVENTION ON CONCEPTS BY CNF (INT)")
                 for i, c_name_i in enumerate(self.c_names):
                     if c_name_i in self.model.virtual_roots: continue
                     intervention_index = torch.ones(c.shape, device=c.device)
-                    c_tensor_topo = batch['complete_c'][:, self.topo_order_idx] 
+                    c_tensor_topo = batch['complete_c'][:, self.topo_order_idx] if 'complete_c' in batch else batch['c'][:, self.topo_order_idx]
                     c_hat_int_topo = make_int_batch(index=i, 
                                                     c=c_tensor_topo.to("cpu"), 
                                                     binary_dims=self.binary_dims, 

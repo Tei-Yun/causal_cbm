@@ -425,27 +425,6 @@ def add_noise(x):
     x[:, constant_mask] += noise * 0.01
     return x
 
-
-def _to_column_tensor(x):
-    t = torch.as_tensor(x)
-    if t.ndim == 2 and t.shape[1] == 1:
-        t = t.squeeze(1)
-    return t.float().view(-1, 1)
-
-def get_c_hat_tensor(topological_order, c_hat, c_tensor_topo):
-    '''
-    from c_hat dictionary, get the tensor of the concept labels for the topological order
-    even the c_hat is incomplete, make it complete by adding the alternative(zero / true) concept
-    '''
-    c_hat_cols = []
-    for i, name in enumerate(topological_order):
-        if name in c_hat:
-            c_hat_cols.append(_to_column_tensor(to_binary(c_hat[name])))
-        else:
-            c_hat_cols.append(c_tensor_topo[:, i].view(-1, 1))
-    c_hat_tensor = torch.cat(c_hat_cols, dim=1)
-    return c_hat_tensor
-
 def to_binary(t):
     # 1. 차원이 1개거나 [N, 1] 형태인 경우 (Sigmoid 확률값) -> 0.5 기준 thresholding
     if t.ndim == 1 or (t.ndim == 2 and t.shape[1] == 1):
@@ -456,7 +435,32 @@ def to_binary(t):
     return t
 
 
-def make_cf_batch(c_hat, index, c, binary_dims, binary_min_values, binary_max_values, flow_loaded):
+def _to_column_tensor(x):
+    t = torch.as_tensor(x)
+    if t.ndim == 2 and t.shape[1] == 1:
+        t = t.squeeze(1)
+    return t.float().view(-1, 1)
+
+def get_c_hat_tensor(topological_order, c_hat, c_tensor_topo, prob_values=False):
+    '''
+    from c_hat dictionary, get the tensor of the concept labels for the topological order
+    even the c_hat is incomplete, make it complete by adding the alternative(zero / true) concept
+    '''
+    c_hat_cols = []
+    for i, name in enumerate(topological_order):
+        if name in c_hat:
+            if not prob_values:
+                c_hat_cols.append(_to_column_tensor(to_binary(c_hat[name])))
+            else:
+                c_hat_cols.append(_to_column_tensor(torch.max(c_hat[name], dim=1).values))
+        else:
+            c_hat_cols.append(c_tensor_topo[:, i].view(-1, 1))
+    c_hat_tensor = torch.cat(c_hat_cols, dim=1)
+    return c_hat_tensor
+
+
+
+def make_cf_batch(c_hat, index, c, binary_dims, binary_min_values, binary_max_values, flow_loaded, prob_values=False):
     '''
     c_hat : predicted concept labels
     index : index of the concept to intervene
@@ -465,16 +469,19 @@ def make_cf_batch(c_hat, index, c, binary_dims, binary_min_values, binary_max_va
     return : counterfactual concept binary labels (after quantization)
     '''
 
-    # dequantization first
+    
     c_hat_deq = c_hat.clone()
-    torch.manual_seed(42)
-    c_hat_deq[:, binary_dims] = c_hat_deq[:, binary_dims] + torch.rand_like(c_hat_deq[:, binary_dims])
     N = c_hat_deq.shape[0]
 
-    
-    # 랜덤 값들을 미리 배치로 생성 (텐서 연산으로 효율화)
-    random_values = torch.rand(N, 1, device=c_hat_deq.device, dtype=c_hat_deq.dtype)
-    intervention_values = (c[:, index:index+1] + random_values).squeeze(1)  # (N, 1) 형태로 유지
+    if not prob_values:
+        # dequantization first
+        torch.manual_seed(42)
+        c_hat_deq[:, binary_dims] = c_hat_deq[:, binary_dims] + torch.rand_like(c_hat_deq[:, binary_dims])
+        random_values = torch.rand(N, 1, device=c_hat_deq.device, dtype=c_hat_deq.dtype)
+        intervention_values = (c[:, index:index+1].float() + random_values).squeeze(1)  # (N, 1) 형태로 유지
+
+    else:
+        intervention_values= c[:, index:index+1].float()
 
 
     c_hat_deq_cf = []
@@ -487,7 +494,9 @@ def make_cf_batch(c_hat, index, c, binary_dims, binary_min_values, binary_max_va
         c_hat_deq_cf.append(cf)
 
     c_hat_deq_cf = torch.cat(c_hat_deq_cf, dim=0)
-    c_hat_cf = post_process(c_hat_deq_cf, binary_dims, binary_min_values, binary_max_values)
+
+    #quantization only if not probability values
+    c_hat_cf = c_hat_deq_cf if prob_values else post_process(c_hat_deq_cf, binary_dims, binary_min_values, binary_max_values)
     return c_hat_cf
 
 def make_int_batch(index, c, binary_dims, binary_min_values, binary_max_values, flow_loaded):

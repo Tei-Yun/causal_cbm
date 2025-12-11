@@ -254,7 +254,7 @@ class _CelebADataset(CelebA):
             img = self.X[index]
         y = self.y[index]
         c = self.c[index]
-        return {'x':img, 'c':c, 'y':y, 'graph':self.graph}
+        return {'x':img, 'c':c, 'complete_c': c,'y':y, 'graph':self.graph}
     
     
     
