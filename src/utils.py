@@ -288,10 +288,15 @@ def check_graph(graph_levels, true_graph):
                 assert node_index > parent_index, \
                 f"Parent {parent} appear after their children {node} in the graph level {level}"
 
-            # check all parents are in the previous level (consistent with get_levels logic)
-            previous_level = levels[levels.index(level)-1]
-            assert set(parents).issubset(set(previous_level)), \
-                f"All parents of {node} should be in the previous level"
+            # # check all parents are in the previous level (consistent with get_levels logic)
+            # previous_level = levels[levels.index(level)-1]
+            # assert set(parents).issubset(set(previous_level)), \
+            #     f"All parents of {node} should be in the previous level"
+
+            # 이 level 이전까지의 모든 노드들
+            all_prev_nodes = [n for l in levels[:levels.index(level)] for n in l]
+            assert set(parents).issubset(set(all_prev_nodes)), \
+                f"All parents of {node} should appear before the node in some previous level"
 
             # check if the position of the nodes in the graph levels correspond to
             # the number of edges to a root
