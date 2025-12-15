@@ -7,4 +7,6 @@ activation: leaky_relu
 concept_loss_weight: 0.5
 normalize_concept_loss: false
 decoder_type: mlp
+#tei 추가 12/4: 학습 방식 설정
+training_mode: 'independent' # 'joint', 'independent', 'stepwise'
 dropout: 0.0

@@ -4,6 +4,7 @@ from torch.nn.functional import one_hot
 from src.models.scbm_utils.intervention_scbm import SCBM_Strategy
 from src.models.scbm_utils.utils import numerical_stability_check
 
+#"어떤 Concept에 개입할 것인가?"를 결정하는 **마스크(Mask)**를 만드는 것
 def get_test_intervention_index(c_shape, c_index, values=None):   
     """
     Get intervention index for test time intervention.
@@ -15,6 +16,7 @@ def get_test_intervention_index(c_shape, c_index, values=None):
                                                                           if Tensor, set intervened concepts to this tensor
                                                                           if 'random', set intervened concepts to random values
     """       
+    #[Batch, Concepts] 크기의 0으로 채워진 행렬을 만들고. 개입할 Concept의 컬럼만 1로 바꿔줌.
     intervention_index = torch.zeros(c_shape)
     # c_values = torch.full(c_shape, float('nan'))
     c_values = torch.full(c_shape, -99999999.)
@@ -37,7 +39,8 @@ def get_test_intervention_index(c_shape, c_index, values=None):
                     c_values[:, index_i] = values_i
                 elif values == 'random':
                     raise NotImplementedError
-                
+
+    #결과: intervention_index (어디를 개입할지), c_values (무슨 값으로 바꿀지, 없으면 Ground Truth 사용)
     if values is not None:
         return intervention_index.to("cuda" if torch.cuda.is_available() else "cpu"), c_values.to("cuda" if torch.cuda.is_available() else "cpu")
     else:
@@ -47,14 +50,22 @@ def get_test_intervention_index(c_shape, c_index, values=None):
 #실제 확률 분포 수정(do-operator 적용)
 #intervention_index==1인 concept의 predicted probability를 ground truth one-hot로 교체
 def maybe_intervene(c_pred_probs, c, intervention_index):
-    # check if intervention index is not all zeros (non interventions) and ground truth is not all nans (virutal roots)
+    # 개입할 곳이 있고(index != 0), Ground Truth가 유효하다면
     if not torch.all(intervention_index == 0) and not torch.all(torch.isnan(c)):
         # check if c is nan where intervention index is not 0
         if torch.any(torch.isnan(c) & (intervention_index != 0)):
             raise ValueError("Intervention with nan ground truth is not allowed")
+        
+        
         concept_cardinality = c_pred_probs.shape[1]
         index = intervention_index.bool().unsqueeze(1).repeat(1,concept_cardinality)
+
+        ## 1. Ground Truth(c)를 One-hot 인코딩으로 변환 (확률 100%로 만듦)
         c_one_hot = one_hot(c.long(), concept_cardinality)
+
+        ## 2. torch.where를 사용한 값 교체 (핵심 로직)
+        # intervention_index가 1인 위치는 -> c_one_hot (정답) 사용
+        # intervention_index가 0인 위치는 -> c_pred_probs (모델 예측값) 사용
         c_pred_probs = torch.where(index, c_one_hot, c_pred_probs)
     return c_pred_probs
 

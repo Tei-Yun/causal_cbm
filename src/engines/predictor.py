@@ -11,6 +11,10 @@ import pytorch_lightning as pl
 
 from src.models.layers.intervention import get_test_intervention_index
 
+#tei 추가 12/11 w/ yeom
+from causalflows.flows import CausalMAF
+from src.utils import post_process, add_noise, make_cf_batch, get_c_hat_tensor, make_int_batch, to_binary
+import copy
 
 class Predictor(pl.LightningModule):    
     def __init__(self,
@@ -27,13 +31,24 @@ class Predictor(pl.LightningModule):
                 task_name: Optional[str] = 'y_hat',
                 test_interv_policy: Optional[str] = None,
                 test_interv_noise: Optional[float] = 0.,
+                # [Add] 외부 Concept 파일 경로 인자 추가
+                external_concept_path: Optional[str] = None,
+                cnf_int_policy: Optional[str] = None, # [Add] CNF intervention policy
+                cnf_bundle_path: Optional[str] = None,
                 ):
         super(Predictor, self).__init__()         
         self.model = model
         self.save_hyperparameters(ignore=["model"], logger=False)
 
+        #tei 수정 11/29
         # [Add] Task 이름 저장
         self.task_name = task_name
+
+        # [Add] 외부 Concept 관련 변수 초기화
+        self.external_concept_path = external_concept_path
+        self.external_c_tensor = None
+        self.test_sample_offset = 0
+
 
         self.optim_class = optim_class
         self.optim_kwargs = optim_kwargs or dict()
@@ -49,6 +64,25 @@ class Predictor(pl.LightningModule):
         ## [Fix] test_interv_policy가 None이면 빈 리스트로 초기화 (len() 에러 방지)
         if self.test_interv_policy is None:
             self.test_interv_policy = []
+
+        #tei 수정 12/11 w/ yeom
+        #[Add] from causal-flows
+        self.cnf_int_policy = cnf_int_policy # cnf_int or cnf_cf
+        self.cnf_bundle_path = cnf_bundle_path
+        assert not (self.cnf_int_policy is not None and self.cnf_bundle_path is None), "CNF bundle path is required for CNF intervention"
+        if self.cnf_int_policy is not None:
+            bundle = torch.load(self.cnf_bundle_path, map_location="cpu")
+            self.cnf_flow = CausalMAF(bundle["features"], bundle["context"], adjacency=bundle["adjacency"])
+            self.cnf_flow.load_state_dict(bundle["state_dict"])
+            self.cnf_flow = self.cnf_flow.to("cpu").eval()
+            self.cnf_flow_loaded = self.cnf_flow()
+            self.topo_order_idx = bundle["topo_order_idx"]
+            self.original_order = bundle["original_order"]
+            self.topological_order = bundle["topological_order"]
+            self.binary_dims = bundle["binary_dims"]
+            self.binary_min_values = bundle["binary_min_values"]
+            self.binary_max_values = bundle["binary_max_values"]
+
 
         self.test_interv_noise = test_interv_noise  
 
@@ -148,6 +182,15 @@ class Predictor(pl.LightningModule):
                 metrics={k: self._check_metric(m) for k, m in nodes_per_level.items()},
                 prefix="test_intervention/level/c/")
             
+            #tei 수정 12/11 w/ yeom
+            # --- CNF counterfactual metrics ---
+            self.test_intervention_cnf_cf = MetricCollection(
+                metrics={k: self._check_metric(m) for k, m in c_acc_metrics.items()},
+                prefix="test_intervention/cnf_cf/")
+
+            self.test_intervention_cnf_int = MetricCollection(
+                metrics={k: self._check_metric(m) for k, m in c_acc_metrics.items()},
+                prefix="test_intervention/cnf_int/")
 
             # --- fairness metrics ---
             self.cace = MetricCollection(
@@ -208,35 +251,122 @@ class Predictor(pl.LightningModule):
             if self.test_interv_noise > 0:
                 x = x + torch.randn_like(x) * self.test_interv_noise
 
-            # baseline task accuracy
-            # do not intervene
+            #Baseline (개입 없음)
+            # 빈 리스트 [] 전달 -> intervention_index는 모두 0
             intervention_index = get_test_intervention_index(c.shape, [])
             inputs = {'x':x, 'c':c, 'intervention_index':intervention_index}
             # forward pass with intervention at test time
             y_output, c_output = self.forward(**inputs)
             y_hat, c_hat = self.model.filter_output_for_metric(y_output, c_output)
+
+            #tei 추가 12/11 w/ yeom
+            c_hat_factual = copy.deepcopy(c_hat)
+
             # update metric after intervention:
             # how well can we predict y?
             self.test_intervention_single_y['_baseline'].update(y_hat, y)            
 
+            #tei 추가 12/11 w/ yeom
+            if self.cnf_int_policy == 'cnf_cf':
+                print("INTERVENTION ON CONCEPTS BY CNF (CF)")
+                for i, c_name_i in enumerate(self.c_names):
+                    if c_name_i in self.model.virtual_roots: continue
+           
+                    '''
+                    [Causal intervention] : single concept intervention using cauasl-flows
+                    '''
+                    intervention_index = torch.ones(c.shape, device=c.device)
+                    c_tensor_topo = batch['c'][:, self.topo_order_idx]
+                    c_hat_tensor = get_c_hat_tensor(self.topological_order, c_hat_factual, c_tensor_topo, prob_values=False) # binary values
+                    c_hat_cf_topo = make_cf_batch(c_hat_tensor, 
+                                                    index=i, 
+                                                    c=c_tensor_topo, 
+                                                    binary_dims=self.binary_dims, 
+                                                    binary_min_values=self.binary_min_values, 
+                                                    binary_max_values=self.binary_max_values, 
+                                                    flow_loaded=self.cnf_flow_loaded,
+                                                    prob_values=False)
+                    incomplete_idx = [self.topological_order.index(n) for n in self.c_names] # original order index of selected concepts
+                    c_hat_cf = c_hat_cf_topo[:, incomplete_idx].to(c.device) # rearrange to original order
+                    inputs = {'x':x, 'c':c_hat_cf, 'intervention_index':intervention_index}
+                    y_output, c_output = self.forward(**inputs)
+                    y_hat, c_hat = self.model.filter_output_for_metric(y_output, c_output)
+                    self.test_intervention_cnf_cf[c_name_i].update(y_hat, y)
+            
+            if self.cnf_int_policy == 'cnf_prob_cf':
+                print("INTERVENTION ON CONCEPTS BY CNF (PROB CF)")
+                for i, c_name_i in enumerate(self.c_names):
+                    if c_name_i in self.model.virtual_roots: continue
+           
+                    '''
+                    [Causal intervention] : single concept intervention using cauasl-flows
+                    '''
+                    intervention_index = torch.ones(c.shape, device=c.device)
+                    c_tensor_topo = batch['c'][:, self.topo_order_idx] if 'c' in batch else batch['c'][:, self.topo_order_idx]
+                    c_hat_tensor = get_c_hat_tensor(self.topological_order, c_hat_factual, c_tensor_topo, prob_values=True) # probabliity values
+                    c_hat_cf_topo = make_cf_batch(c_hat_tensor, 
+                                                    index=i, 
+                                                    c=c_tensor_topo, 
+                                                    binary_dims=self.binary_dims, 
+                                                    binary_min_values=self.binary_min_values, 
+                                                    binary_max_values=self.binary_max_values, 
+                                                    flow_loaded=self.cnf_flow_loaded,
+                                                    prob_values=True)
+                    incomplete_idx = [self.topological_order.index(n) for n in self.c_names] # original order index of selected concepts
+                    c_hat_cf = c_hat_cf_topo[:, incomplete_idx].to(c.device) # rearrange to original order
+                    inputs = {'x':x, 'c':c_hat_cf, 'intervention_index':intervention_index}
+                    y_output, c_output = self.forward(**inputs)
+                    y_hat, c_hat = self.model.filter_output_for_metric(y_output, c_output)
+                    self.test_intervention_cnf_cf[c_name_i].update(y_hat, y)      
+
+            
+            if self.cnf_int_policy == 'cnf_int':
+                print("INTERVENTION ON CONCEPTS BY CNF (INT)")
+                for i, c_name_i in enumerate(self.c_names):
+                    if c_name_i in self.model.virtual_roots: continue
+                    intervention_index = torch.ones(c.shape, device=c.device)
+                    c_tensor_topo = batch['c'][:, self.topo_order_idx] 
+                    c_hat_int_topo = make_int_batch(index=i, 
+                                                    c=c_tensor_topo.to("cpu"), 
+                                                    binary_dims=self.binary_dims, 
+                                                    binary_min_values=self.binary_min_values.to("cpu"), 
+                                                    binary_max_values=self.binary_max_values.to("cpu"), 
+                                                    flow_loaded=self.cnf_flow_loaded)
+                    incomplete_idx = [self.topological_order.index(n) for n in self.c_names] # original order index of selected concepts
+                    c_hat_int = c_hat_int_topo[:, incomplete_idx].to(c.device) # rearrange to original order
+                    inputs = {'x':x, 'c':c_hat_int, 'intervention_index':intervention_index}
+                    y_output, c_output = self.forward(**inputs)
+                    y_hat, c_hat = self.model.filter_output_for_metric(y_output, c_output)
+                    self.test_intervention_cnf_int[c_name_i].update(y_hat, y)
+
+
+
+
+            #Single Concept Intervention (하나씩 개입)
             # interventions on individual concepts
             for i, c_name_i in enumerate(self.c_names):
                 if c_name_i in self.model.virtual_roots: continue
-                # intervene on concept c_name_i
+
+                ## i번째 Concept만 개입 (마스크의 i번째 컬럼만 1)
                 intervention_index = get_test_intervention_index(c.shape, i)
                 inputs = {'x':x, 'c':c, 'intervention_index':intervention_index}
-                # forward pass with intervention at test time
+
+                # 모델 Forward -> 이때 내부적으로 maybe_intervene이 호출되어 i번째 예측값이 정답으로 바뀜
                 y_output, c_output = self.forward(**inputs)
                 y_hat, c_hat = self.model.filter_output_for_metric(y_output, c_output)
                 # update metric after intervention:
-                # after interveening on concept c_name_i, how well can we predict y?
+                # 결과 기록 (이 Concept을 알면 y 예측이 얼마나 좋아지는가?)
                 self.test_intervention_single_y[c_name_i].update(y_hat, y)
 
             # level intervention
+            #Level/Group Intervention (그룹 개입)
             for l in range(0, len(self.test_interv_policy)+1):
+
+                ## 정책(Policy)에 따라 여러 Concept을 동시에 개입
                 nodes = list(itertools.chain(*self.test_interv_policy[:l]))
                 intervention_index = get_test_intervention_index(c.shape, nodes)
                 inputs = {'x':x, 'c':c, 'intervention_index':intervention_index}
+
                 # forward pass with intervention at test time
                 y_output, c_output = self.forward(**inputs)
                 y_hat, c_hat = self.model.filter_output_for_metric(y_output, c_output)
@@ -294,9 +424,14 @@ class Predictor(pl.LightningModule):
 
     def update_and_log_metrics(self, step, y_hat, y, c_hat, c, batch):
         # update and log task metrics
-        y_collection = getattr(self, f"{step}_y_metrics")
-        y_collection.update(y_hat, y)
-        self.log_metrics(y_collection, batch_size=batch['batch_size'])
+        
+        #tei 수정 12/3
+        # [수정] y_hat이 None이 아닐 때만 Task Metric 업데이트
+        if y_hat is not None:
+            y_collection = getattr(self, f"{step}_y_metrics")
+            y_collection.update(y_hat, y)
+            self.log_metrics(y_collection, batch_size=batch['batch_size'])
+            
         # update and log concept metrics
         c_collection = getattr(self, f"{step}_c_metrics")
         # log metrics for all predicted concepts 
@@ -343,13 +478,17 @@ class Predictor(pl.LightningModule):
         self.log_loss("val", val_loss, batch_size=batch['batch_size'])
         return val_loss
     
+
+
+
     def test_step(self, batch, batch_idx):
         test_loss, y_output, c_output, y, c = self.shared_step(batch, step='test')
         # Update metrics and log
         y_hat, c_hat = self.model.filter_output_for_metric(y_output, c_output)
         self.update_and_log_metrics("test", y_hat, y, c_hat, c, batch)
         self.log_loss("test", test_loss, batch_size=batch['batch_size'])
-        # test-time interventions
+        
+        # test-time interventions (기존 로직 - CBM 자체 예측값에 대한 Intervention)
         self.test_intervention(batch)
         if 'Qualified' in self.c_names:
             self.test_intervention_fairness(batch)
@@ -368,6 +507,12 @@ class Predictor(pl.LightningModule):
             self.y_hat_accumulator.append(y_hat.detach().cpu())
 
         return test_loss
+    
+
+
+
+
+
 
     def on_test_epoch_end(self):
         # baseline task accuracy
@@ -408,6 +553,30 @@ class Predictor(pl.LightningModule):
                 print(f"Concept accuracy after intervention on {level}: {c_int[level]}")
             pickle.dump(c_int, open(f'results/level_interventions_on_c.pkl', 'wb'))
 
+
+            #tei CNF 추가 12/11 w/ yeom 
+
+            # CNF counterfactual task accuracy
+            y_int = {}
+            for k, metric in self.test_intervention_cnf_cf.items():
+                c_name = _remove_prefix(k, self.test_intervention_cnf_cf.prefix)
+                y_int[c_name] = metric.compute().item()
+                print(f"Task accuracy after CNF(CF) on {c_name}: {y_int[c_name]}")
+            pickle.dump(y_int, open(f'results/cnf_cf_interventions_on_y.pkl', 'wb'))
+
+
+            # CNF interventional task accuracy
+            y_int = {}
+            for k, metric in self.test_intervention_cnf_int.items():
+                c_name = _remove_prefix(k, self.test_intervention_cnf_int.prefix)
+                y_int[c_name] = metric.compute().item()
+                print(f"Task accuracy after CNF(INT) on {c_name}: {y_int[c_name]}")
+            pickle.dump(y_int, open(f'results/cnf_int_interventions_on_y.pkl', 'wb'))
+
+
+
+
+
             # save graph and concepts
             pickle.dump({'concepts':self.c_names,
                          'policy':self.test_interv_policy}, open("graph.pkl", 'wb'))
@@ -419,7 +588,9 @@ class Predictor(pl.LightningModule):
         # [Fix] 데이터가 수집된 경우에만 저장 (Blackbox 제외)
         # [Modified] c_hat 뿐만 아니라 y_hat도 함께 저장하도록 수정
         if any(self.c_hat_accumulator.values()) or self.y_hat_accumulator:
-            final_data = {}
+            # [Modified] 딕셔너리 분리 (Concept Only)
+            final_data_binary_c = {}
+            final_data_probs_c = {}
             
             # [Add] 이진화 변환 함수 (확률 -> 0 or 1)
             def to_binary(t):
@@ -431,23 +602,63 @@ class Predictor(pl.LightningModule):
                     return t.argmax(dim=1).float()
                 return t
 
-            # Concept Predictions 병합 및 이진화
+            # [Add] 확률값 추출 함수 (Soft Prediction)
+            def to_prob(t):
+                # 1. [N, 1] 형태인 경우 (Sigmoid 확률값) -> [N]으로 차원 축소
+                if t.ndim == 2 and t.shape[1] == 1:
+                    return t.squeeze(1)
+                # 2. 이미 [N] 형태인 경우 -> 그대로 반환
+                elif t.ndim == 1:
+                    return t
+                # 3. [N, C] 형태인 경우 (Softmax 확률값) -> Class 1 (두번째) 확률 반환
+                # 예: [0.7, 0.3] -> 0.3
+                elif t.ndim == 2 and t.shape[1] > 1:
+                    return t[:, 1]
+                return t
+
+            # 1. Concepts 병합 (Concept Only 딕셔너리에 저장)
             if any(self.c_hat_accumulator.values()):
-                final_data.update({
-                    name: to_binary(torch.cat(self.c_hat_accumulator[name], dim=0))
-                    for name in self.c_hat_accumulator if self.c_hat_accumulator[name]
-                })
+                for name in self.c_hat_accumulator:
+                    if self.c_hat_accumulator[name]:
+                        concat_t = torch.cat(self.c_hat_accumulator[name], dim=0)
+                        final_data_binary_c[name] = to_binary(concat_t)
+                        final_data_probs_c[name] = to_prob(concat_t)
             
-            # Task Prediction (Mouth_Slightly_Open) 병합 및 이진화
+            # 2. Task 포함 버전 딕셔너리 생성 (Concept Only 복사)
+            final_data_binary_cy = final_data_binary_c.copy()
+            final_data_probs_cy = final_data_probs_c.copy()
+
+            # 3. Task Prediction (Mouth_Slightly_Open) 병합 및 추가
             if self.y_hat_accumulator:
+                # [Fix] y_hat_accumulator는 리스트이므로 for loop 없이 바로 cat
                 y_concat = torch.cat(self.y_hat_accumulator, dim=0)
-                # [Modified] y_hat 대신 실제 Task 이름 사용
-                final_data[self.task_name] = to_binary(y_concat)
+                
+                # [Fix] task_name이 ListConfig, list, 혹은 문자열 형태일 때 깨끗한 문자열로 변환
+                # 예: "['Mouth_Slightly_Open']" -> "Mouth_Slightly_Open"
+                t_name = str(self.task_name)
+                for char in ['[', ']', "'", '"']:
+                    t_name = t_name.replace(char, "")
+                t_name = t_name.strip()
 
-            pickle.dump(final_data, open("results/c_hat_all.pkl", "wb"))
-            print("Saved all BINARY predictions (concepts + task y_hat) to results/c_hat_all.pkl")
+                # Task 포함 버전에만 추가
+                final_data_binary_cy[t_name] = to_binary(y_concat)
+                final_data_probs_cy[t_name] = to_prob(y_concat)
 
+            # Save Files (총 4개)
+            
+            # 1) Binary - Concepts Only
+            pickle.dump(final_data_binary_c, open("results/c_hat_only_concepts_binary.pkl", "wb"))
+            
+            # 2) Binary - Concepts + Task
+            pickle.dump(final_data_binary_cy, open("results/c_hat_with_task_binary.pkl", "wb"))
+            
+            # 3) Probs - Concepts Only
+            pickle.dump(final_data_probs_c, open("results/c_hat_only_concepts_probs.pkl", "wb"))
+            
+            # 4) Probs - Concepts + Task
+            pickle.dump(final_data_probs_cy, open("results/c_hat_with_task_probs.pkl", "wb"))
 
+            print("Saved prediction results (Binary/Probs x Only/WithTask) to results/ folder.")
 
 
 

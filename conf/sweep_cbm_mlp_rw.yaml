@@ -14,7 +14,8 @@ defaults:
 hydra:
   mode: MULTIRUN
   sweep:
-    dir: "outputs/multirun/${now:%Y-%m-%d}/${now:%H-%M-%S}_cbm_mlp_real"
+    #dir: "outputs/multirun/${now:%Y-%m-%d}/${now:%H-%M-%S}_cbm_mlp_joint_lossw0.8_int_prob_0.8"
+    dir: "outputs/multirun/${now:%Y-%m-%d}/${now:%H-%M-%S}_cbm_mlp_independent_lossw0.8_int_prob_0.8_cnf_cf"
   
   sweeper:
     # standard grid search
@@ -30,13 +31,25 @@ hydra:
       model.hidden_size: 64
       model.concept_loss_weight: 0.8
       engine.optim_kwargs.lr: 0.00075
+
+      #tei 추가 12/3
+      model.training_mode: joint  # 또는 [joint, stepwise, independent]
+
     list_params:
       dataset: celeba  #, cub_causal_struct, siim_pneumothorax
       dataset.batch_size: 512   #, 512, 128
 
 #tei 수정 11/29
-policy: nodes_true # levels_true, levels_pred, nodes_true, nodes_pred, random
-#olicy: none  # <--- 기존 nodes_true 또는 all 에서 none 으로 변경
+#policy: nodes_true # levels_true, levels_pred, nodes_true, nodes_pred, random
+
+#tei 수정 12/11 w/yeom
+policy: cnf_cf #none, levels_true, levels_pred, nodes_true, nodes_pred, random , cnf_cf, cnf_prob_cf
+cnf_bundle_path: '/home/taehui/causally-reliable-cbm/CNF_notebooks/cnf_bundle_celeba.pt'
+
+#test_only: false # false
+test_only: true
+ckpt_path: '/home/taehui/causally-reliable-cbm/outputs/multirun/2025-12-15/22-26-11_cbm_mlp_independent_lossw0.8_int_prob_0.25/0/checkpoints/epoch=7-step=2544.ckpt'
+
 
 dataset:
   #load_embeddings: false
@@ -46,14 +59,17 @@ dataset:
   # batch_size: 512  # 128 (Pneumo, all SCBM), 512 (all others)
   num_workers: 4 #0
 
+
 engine:
-  intervention_prob: 0.8
+  intervention_prob: 0.8 #0, 0.25,  0.8
+ 
 
 trainer:
-  logger: wandb  # wandb, null
-  devices: [5]
-  max_epochs: 5 #500
+  logger: null  # wandb, null
+  devices: [0]
+  max_epochs: 500 #500
   patience: 30
+
 
 #tei 수정 11/29
 #이 부분이 살아있어서 위쪽의 Null 설정을 덮어쓰고 있었음
@@ -62,3 +78,6 @@ trainer:
 #   source: arxiv # arxiv or custom (arxiv + www scraper)
 
 notes: neurips_test
+
+# [추가] 체크포인트 경로 설정 (기본값: null -> 학습 진행)
+# 테스트만 하고 싶을 때: "/path/to/your/model.ckpt" 입력

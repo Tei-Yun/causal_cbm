@@ -71,7 +71,8 @@ def update_config_from_data(cfg: DictConfig, dataset) -> DictConfig:
         )
     return cfg
 
-def maybe_update_config_with_graph(cfg: DictConfig, graph, interv_policy) -> DictConfig:
+#tei 수정 12/11 w/yeom
+def maybe_update_config_with_graph(cfg: DictConfig, graph, interv_policy, cnf_int_policy_and_bundle_path = None) -> DictConfig:
     """ can be used to update the config based on the graph """
     if graph is not None:
         if model_is_causal(cfg.model):
@@ -84,6 +85,14 @@ def maybe_update_config_with_graph(cfg: DictConfig, graph, interv_policy) -> Dic
         with open_dict(cfg):
             cfg.engine.update(
                 test_interv_policy = interv_policy
+            )
+    
+    #yeom from causal-flows
+    if cnf_int_policy_and_bundle_path:
+        with open_dict(cfg):
+            cfg.engine.update(
+                cnf_int_policy = cnf_int_policy_and_bundle_path[0],
+                cnf_bundle_path = cnf_int_policy_and_bundle_path[1]
             )
     return cfg
     
@@ -171,7 +180,7 @@ def get_graph_levels(graph, task_node):
     # get the levels of the graph
     levels = get_levels(graph, involeved_nodes, roots)
     # check if the levels and roots are correct
-    check_graph(levels, graph)
+    #check_graph(levels, graph)
     return levels
 
 def common_cause_nodes(graph):
@@ -392,3 +401,152 @@ class SCBMPercentileStrategy:
         c_intervened_probs = (0.05 + 0.9 * c_true) * c_mask
         c_intervened_logits = torch.logit(c_intervened_probs, eps=1e-6)
         return c_intervened_logits
+
+
+
+
+
+
+
+#[Add] CNF intervention functions
+def post_process(x, binary_dims, binary_min_values, binary_max_values, inplace=False):
+    if not inplace:
+        x = x.clone()
+    x[..., binary_dims] = x[..., binary_dims].floor().float()
+    x[..., binary_dims] = torch.clamp(x[..., binary_dims], min=binary_min_values.to(x.device), max=binary_max_values.to(x.device))
+
+    return x
+
+def add_noise(x):
+    # Calculate the standard deviation of each column
+    std = torch.std(x, dim=0).mul(100).round() / 100.0
+
+    # Find the columns that are constant (i.e., have a standard deviation of 0)
+    constant_mask = std == 0
+    # # Generate a small amount of noise for each constant column
+    # noise = torch.rand(x.shape[0], sum(constant_mask)) * 2.0 - 1.0
+    noise = torch.randn(x.shape[0], sum(constant_mask))
+    # Add the noise to the corresponding columns
+    x[:, constant_mask] += noise * 0.01
+    return x
+
+
+def _to_column_tensor(x):
+    t = torch.as_tensor(x)
+    if t.ndim == 2 and t.shape[1] == 1:
+        t = t.squeeze(1)
+    return t.float().view(-1, 1)
+
+def get_c_hat_tensor(topological_order, c_hat, c_tensor_topo,prob_values):
+    '''
+    from c_hat dictionary, get the tensor of the concept labels for the topological order
+    even the c_hat is incomplete, make it complete by adding the alternative(zero / true) concept
+    '''
+    c_hat_cols = []
+    for i, name in enumerate(topological_order):
+        if name in c_hat:
+            if prob_values:
+                # [수정] prob_values=True일 때 [N, 2] 형태의 텐서가 들어오면 [N, 1]로 줄여야 함
+                # 보통 Softmax 출력의 경우 index 1 (Positive class)의 확률을 사용
+                val = c_hat[name]
+                if val.ndim == 2 and val.shape[1] > 1:
+                    val = val[:, 1]
+                c_hat_cols.append(_to_column_tensor(val))
+            else:
+                c_hat_cols.append(_to_column_tensor(to_binary(c_hat[name]))) #여기서 바이너리 하는중
+        else:
+            c_hat_cols.append(c_tensor_topo[:, i].view(-1, 1))
+    c_hat_tensor = torch.cat(c_hat_cols, dim=1)
+    return c_hat_tensor
+
+def to_binary(t):
+    # 1. 차원이 1개거나 [N, 1] 형태인 경우 (Sigmoid 확률값) -> 0.5 기준 thresholding
+    if t.ndim == 1 or (t.ndim == 2 and t.shape[1] == 1):
+        return (t > 0.5).float() 
+    # 2. 차원이 [N, C] 형태인 경우 (Softmax 확률값) -> 가장 높은 확률의 인덱스(argmax)
+    elif t.ndim == 2 and t.shape[1] > 1:
+        return t.argmax(dim=1).float()
+    return t
+
+
+def make_cf_batch(c_hat, index, c, binary_dims, binary_min_values, binary_max_values, flow_loaded,prob_values):
+    '''
+    c_hat : predicted concept labels
+    index : index of the concept to intervene
+    c : intervention value (true values)
+
+    return : counterfactual concept binary labels (after quantization)
+    '''
+    # [수정] flow_loaded 모델이 있는 device 확인
+    # flow_loaded가 nn.Module이면 parameters()로 확인, 아니면 device 속성 확인 시도
+    try:
+        target_device = next(flow_loaded.parameters()).device
+    except:
+        # 만약 parameters()가 없으면 (예: 커스텀 객체) 기본적으로 c_hat의 device를 따르거나 CPU로 가정
+        target_device = c_hat.device
+
+    # [수정] 입력 텐서들을 target_device로 이동
+    # c_hat과 c를 float로 변환하여 타입 불일치 에러 방지 (Index put requires the source and destination dtypes match)
+    c_hat = c_hat.to(target_device).float()
+    c = c.to(target_device).float()
+    # c_hat = c_hat.to(target_device)
+    # c = c.to(target_device)
+    binary_dims = [bd for bd in binary_dims] # list는 device 이동 불필요
+    binary_min_values = binary_min_values.to(target_device)
+    binary_max_values = binary_max_values.to(target_device)
+
+
+    # dequantization first
+    c_hat_deq = c_hat.clone()
+    N = c_hat_deq.shape[0]
+    if not prob_values:
+        torch.manual_seed(42)
+        c_hat_deq[:, binary_dims] = c_hat_deq[:, binary_dims] + 0.1 *torch.rand_like(c_hat_deq[:, binary_dims])
+        random_values = 0.1*torch.rand(N, 1, device=c_hat_deq.device, dtype=c_hat_deq.dtype)
+        intervention_values = (c[:, index:index+1] + random_values).squeeze(1)  # (N, 1) 형태로 유지
+    else:
+        intervention_values = c[:, index:index+1].squeeze(1)
+        # torch.manual_seed(42)
+        # random_values = 0.01*torch.rand(N, 1, device=c_hat_deq.device, dtype=c_hat_deq.dtype)
+        # intervention_values = (c[:, index:index+1] + random_values).squeeze(1)  # (N, 1) 형태로 유지
+
+
+
+    c_hat_deq_cf = []
+    for i in range(N):
+        cf = flow_loaded.compute_counterfactual(
+            c_hat_deq[i].view(1, -1), 
+            index=index, 
+            value=intervention_values[i]
+        ).detach()
+        c_hat_deq_cf.append(cf)
+
+    c_hat_deq_cf = torch.cat(c_hat_deq_cf, dim=0)
+
+    if not prob_values:
+        c_hat_cf = post_process(c_hat_deq_cf, binary_dims, binary_min_values, binary_max_values)
+    else:
+        c_hat_cf = c_hat_deq_cf
+    return c_hat_cf
+
+def make_int_batch(index, c, binary_dims, binary_min_values, binary_max_values, flow_loaded):
+    '''
+    c_hat : predicted concept labels
+    index : index of the concept to intervene
+    c : intervention value
+
+    return : interventional concept binary labels (after quantization)
+    '''
+
+    N = c.shape[0]
+    torch.manual_seed(42)
+    random_values = torch.rand(N, 1, device=c.device, dtype=c.dtype)
+    intervention_values = (c[:, index:index+1] + random_values).squeeze(1)  # (N, 1) 형태로 유지
+
+    c_hat_deq_int = []
+    for i in range(N):
+        int_i = flow_loaded.sample_interventional(index=index, value=intervention_values[i], sample_shape = (1,))
+        c_hat_deq_int.append(int_i)
+    c_hat_deq_int = torch.cat(c_hat_deq_int, dim=0)
+    c_hat_int = post_process(c_hat_deq_int, binary_dims, binary_min_values, binary_max_values)
+    return c_hat_int
