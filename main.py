@@ -65,15 +65,6 @@ def main(cfg: DictConfig) -> None:
             with open(os.path.join(dataset_directory, "graph.pkl"), 'rb') as f:
                 graph = pickle.load(f)
         else:
-            # estimate causal graph with causal structural learning algorithms
-            predicted_graph = causal_discovery(cfg, dataset, true_graph)
-            if true_graph is not None:
-                hamming = hamming_distance(true_graph, predicted_graph)
-                print('(after CD) structural hamming distance: ', hamming)    
-
-
-            graph = predicted_graph
-
             # save graph
             with open(os.path.join(dataset_directory, "graph.pkl"), 'wb') as f:
                 pickle.dump(graph, f)
@@ -227,6 +218,7 @@ def main(cfg: DictConfig) -> None:
             # 테스트용 Trainer 생성
             trainer = Trainer(cfg)
             
+            #tei 수정 12/15
             # # 테스트 수행 (ckpt_path가 있으면 해당 가중치 로드)
             # trainer.test(engine, test_dataloader, ckpt_path=ckpt_path)
             

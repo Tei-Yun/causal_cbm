@@ -14,7 +14,7 @@ defaults:
 hydra:
   mode: MULTIRUN
   sweep:
-    dir: "outputs/multirun/${now:%Y-%m-%d}/${now:%H-%M-%S}_blackbox_real"
+    dir: "outputs/multirun/${now:%Y-%m-%d}/${now:%H-%M-%S}_blackbox_int_prob_0"
   sweeper:
     # standard grid search
     grid_params:
@@ -24,10 +24,13 @@ hydra:
       # possible models are:
       # blackbox, blackbox_multi, cbm_linear, cbm_mlp, cem, c2bm
       model: blackbox
-      seed: 1,2,3,4,5
+      seed: 1 #,2,3,4,5
       model.hidden_size: 64
       model.dropout: 0.5
       engine.optim_kwargs.lr: 0.00075
+
+      +model.training_mode: joint  # 또는 [joint, stepwise, independent]
+
     list_params:
       dataset: celeba #, cub_causal_struct, siim_pneumothorax
       dataset.batch_size: 512 #, 512, 128
@@ -35,20 +38,24 @@ hydra:
 policy: nodes_true # levels_true, levels_pred, nodes_true, nodes_pred, random
 
 dataset:
+  #load_embeddings: false
   load_embeddings: true
-  #load_embeddings: true
   load_graph: true        # <--- 여기를 true로 변경 (저장된 graph.pkl 로드)
   load_true_graph: false  # <--- 여기는 false 유지 (코드 상의 True Graph 사용 안 함)
-  num_workers: 4
+  # batch_size: 512  # 128 (Pneumo, all SCBM), 512 (all others)
+  num_workers: 4 #0
+
 
 engine:
-  intervention_prob: 0.8
+  intervention_prob: 0 #0, 0.25,  0.8
+ 
 
 trainer:
-  logger: wandb # wandb, null
-  devices: [1]
-  max_epochs: 500
+  logger: null  # wandb, null
+  devices: [3]
+  max_epochs: 500 #500
   patience: 30
+
 
 #tei 수정 11/29
 #이 부분이 살아있어서 위쪽의 Null 설정을 덮어쓰고 있었음
@@ -57,3 +64,6 @@ trainer:
 #   source: arxiv # arxiv or custom (arxiv + www scraper)
 
 notes: neurips_test
+
+# [추가] 체크포인트 경로 설정 (기본값: null -> 학습 진행)
+# 테스트만 하고 싶을 때: "/path/to/your/model.ckpt" 입력

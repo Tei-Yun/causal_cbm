@@ -12,12 +12,16 @@ class BlackBox(nn.Module):
                  activation='leaky_relu',
                  dropout=0.0,
                  c_info={},
-                 y_info={}):
+                 y_info={},
+                 **kwargs): # [수정] 추가 인자(training_mode 등)를 받기 위해 **kwargs 추가
         super(BlackBox, self).__init__()
         
         # to be stored for every model
         self.has_concepts = False
         self.is_causal = False
+
+        # [추가] training_mode 저장 (기본값 'joint')
+        self.training_mode = kwargs.get('training_mode', 'joint')
 
         self.mlp = MLP(input_size=input_size,
                            hidden_size=hidden_size,

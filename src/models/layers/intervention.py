@@ -60,8 +60,11 @@ def maybe_intervene(c_pred_probs, c, intervention_index):
         concept_cardinality = c_pred_probs.shape[1]
         index = intervention_index.bool().unsqueeze(1).repeat(1,concept_cardinality)
 
+        #tei 수정 12/16
+        c_one_hot = torch.stack([1.0 - c, c], dim=1).to(c_pred_probs.device)
         ## 1. Ground Truth(c)를 One-hot 인코딩으로 변환 (확률 100%로 만듦)
-        c_one_hot = one_hot(c.long(), concept_cardinality)
+        #c_one_hot = one_hot(c.long(), concept_cardinality)
+        
 
         ## 2. torch.where를 사용한 값 교체 (핵심 로직)
         # intervention_index가 1인 위치는 -> c_one_hot (정답) 사용

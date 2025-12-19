@@ -5,4 +5,6 @@ n_layers_concept_encoder: 2
 activation: leaky_relu
 concept_loss_weight: 0.5
 normalize_concept_loss: false
+#tei 추가 12/4: 학습 방식 설정
+training_mode: 'independent' # 'joint', 'independent', 'stepwise'
 decoder_type: linear

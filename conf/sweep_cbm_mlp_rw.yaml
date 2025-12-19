@@ -15,7 +15,7 @@ hydra:
   mode: MULTIRUN
   sweep:
     #dir: "outputs/multirun/${now:%Y-%m-%d}/${now:%H-%M-%S}_cbm_mlp_joint_lossw0.8_int_prob_0.8"
-    dir: "outputs/multirun/${now:%Y-%m-%d}/${now:%H-%M-%S}_cbm_mlp_independent_lossw0.8_int_prob_0.8_cnf_cf"
+    dir: "outputs/multirun/${now:%Y-%m-%d}/${now:%H-%M-%S}_cbm_mlp_joint_lossw0.8_int_prob_0.8_cnf_cf"
   
   sweeper:
     # standard grid search
@@ -26,14 +26,14 @@ hydra:
       # possible models are:
       # blackbox, blackbox_multi, cbm_linear, cbm_mlp, cem, c2bm
 
-      model: cbm_mlp
+      model: cbm_mlp #이부분 linear로 바꿔보기
       seed: 1 #,2,3,4,5
       model.hidden_size: 64
       model.concept_loss_weight: 0.8
       engine.optim_kwargs.lr: 0.00075
 
       #tei 추가 12/3
-      model.training_mode: joint  # 또는 [joint, stepwise, independent]
+      model.training_mode: independent  # 또는 [joint, stepwise, independent]
 
     list_params:
       dataset: celeba  #, cub_causal_struct, siim_pneumothorax
@@ -48,7 +48,7 @@ cnf_bundle_path: '/home/taehui/causally-reliable-cbm/CNF_notebooks/cnf_bundle_ce
 
 #test_only: false # false
 test_only: true
-ckpt_path: '/home/taehui/causally-reliable-cbm/outputs/multirun/2025-12-15/22-26-11_cbm_mlp_independent_lossw0.8_int_prob_0.25/0/checkpoints/epoch=7-step=2544.ckpt'
+ckpt_path: '/home/taehui/causally-reliable-cbm/outputs/multirun/2025-12-15/20-52-13_cbm_mlp_joint_lossw0.8_int_prob0.8/0/checkpoints/epoch=66-step=21306.ckpt'
 
 
 dataset:
@@ -56,7 +56,7 @@ dataset:
   load_embeddings: true
   load_graph: true        # <--- 여기를 true로 변경 (저장된 graph.pkl 로드)
   load_true_graph: false  # <--- 여기는 false 유지 (코드 상의 True Graph 사용 안 함)
-  # batch_size: 512  # 128 (Pneumo, all SCBM), 512 (all others)
+  batch_size: 512  # 128 (Pneumo, all SCBM), 512 (all others)
   num_workers: 4 #0
 
 
@@ -66,7 +66,7 @@ engine:
 
 trainer:
   logger: null  # wandb, null
-  devices: [0]
+  devices: [5]
   max_epochs: 500 #500
   patience: 30
 

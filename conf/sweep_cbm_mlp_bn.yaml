@@ -11,7 +11,7 @@ defaults:
 hydra:
   mode: MULTIRUN
   sweep:
-    dir: "outputs/multirun/${now:%Y-%m-%d}/${now:%H-%M-%S}_cbm_mlp_bn"
+    dir: "outputs/multirun/${now:%Y-%m-%d}/${now:%H-%M-%S}_cbm_mlp_asia_independent_wandb"
   sweeper:
     # standard grid search
     grid_params:
@@ -20,8 +20,12 @@ hydra:
       # colormnist, colormnist_ood, celeba, celeba_unfair, siim_pneumothorax
       # possible models are:
       # blackbox, blackbox_multi, cbm_linear, cbm_mlp, cem, c2bm
-      model: cbm_mlp
-      seed: 1,2 #,3,4,5
+      model: cbm_linear
+      seed: 1 #,2 #,3,4,5
+
+    #tei 추가 12/3
+      model.training_mode: independent  # 또는 [joint, stepwise, independent]
+
     # additional list sweeper
     list_params:
       # dataset: asia, sachs, insurance, alarm, hailfinder
@@ -34,11 +38,17 @@ hydra:
       engine.optim_kwargs.lr: [0.00075]
 
 
+
 #tei 수정 11/29
-policy: nodes_true # levels_true, levels_pred, nodes_true, nodes_pred, random
-#policy: none  # <--- 기존 nodes_true 또는 all 에서 none 으로 변경
+#policy: nodes_true # levels_true, levels_pred, nodes_true, nodes_pred, random
 
+#tei 수정 12/11 w/yeom
+policy: nodes_true #none, levels_true, levels_pred, nodes_true, nodes_pred, random , cnf_cf, cnf_prob_cf
+cnf_bundle_path: '/home/taehui/causally-reliable-cbm/CNF_notebooks/cnf_bundle_asia.pt'
 
+#test_only: false # false
+test_only: false
+ckpt_path: '/home/taehui/causally-reliable-cbm/outputs/multirun/2025-12-18/19-17-55_cbm_mlp_asia_independent/0/checkpoints/epoch=2-step=330.ckpt'
 
 
 
@@ -54,10 +64,10 @@ dataset:
 
 engine:
   intervention_prob: 0.8
-  test_interv_noise: 0.8   # for bndatasets only
-
+  #test_interv_noise: 0.8   # for bndatasets only
+  test_interv_noise: 0
 trainer:
-  logger: null  # wandb, null
+  logger: wandb  # wandb, null
   devices: [0]
   max_epochs: 500
   patience: 30

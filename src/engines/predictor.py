@@ -275,11 +275,16 @@ class Predictor(pl.LightningModule):
                     '''
                     [Causal intervention] : single concept intervention using cauasl-flows
                     '''
+
+                    #tei 수정 12/16
+                    topo_idx = self.topological_order.index(c_name_i)
+
                     intervention_index = torch.ones(c.shape, device=c.device)
                     c_tensor_topo = batch['c'][:, self.topo_order_idx]
                     c_hat_tensor = get_c_hat_tensor(self.topological_order, c_hat_factual, c_tensor_topo, prob_values=False) # binary values
                     c_hat_cf_topo = make_cf_batch(c_hat_tensor, 
-                                                    index=i, 
+                                                    #index=i, 
+                                                    index=topo_idx, #tei 수정 12/16
                                                     c=c_tensor_topo, 
                                                     binary_dims=self.binary_dims, 
                                                     binary_min_values=self.binary_min_values, 
@@ -301,11 +306,16 @@ class Predictor(pl.LightningModule):
                     '''
                     [Causal intervention] : single concept intervention using cauasl-flows
                     '''
+
+                    #tei 수정 12/16
+                    topo_idx = self.topological_order.index(c_name_i)
+
                     intervention_index = torch.ones(c.shape, device=c.device)
                     c_tensor_topo = batch['c'][:, self.topo_order_idx] if 'c' in batch else batch['c'][:, self.topo_order_idx]
                     c_hat_tensor = get_c_hat_tensor(self.topological_order, c_hat_factual, c_tensor_topo, prob_values=True) # probabliity values
                     c_hat_cf_topo = make_cf_batch(c_hat_tensor, 
-                                                    index=i, 
+                                                    #index=i,
+                                                    index=topo_idx, #tei 수정 12/16 
                                                     c=c_tensor_topo, 
                                                     binary_dims=self.binary_dims, 
                                                     binary_min_values=self.binary_min_values, 
@@ -320,24 +330,24 @@ class Predictor(pl.LightningModule):
                     self.test_intervention_cnf_cf[c_name_i].update(y_hat, y)      
 
             
-            if self.cnf_int_policy == 'cnf_int':
-                print("INTERVENTION ON CONCEPTS BY CNF (INT)")
-                for i, c_name_i in enumerate(self.c_names):
-                    if c_name_i in self.model.virtual_roots: continue
-                    intervention_index = torch.ones(c.shape, device=c.device)
-                    c_tensor_topo = batch['c'][:, self.topo_order_idx] 
-                    c_hat_int_topo = make_int_batch(index=i, 
-                                                    c=c_tensor_topo.to("cpu"), 
-                                                    binary_dims=self.binary_dims, 
-                                                    binary_min_values=self.binary_min_values.to("cpu"), 
-                                                    binary_max_values=self.binary_max_values.to("cpu"), 
-                                                    flow_loaded=self.cnf_flow_loaded)
-                    incomplete_idx = [self.topological_order.index(n) for n in self.c_names] # original order index of selected concepts
-                    c_hat_int = c_hat_int_topo[:, incomplete_idx].to(c.device) # rearrange to original order
-                    inputs = {'x':x, 'c':c_hat_int, 'intervention_index':intervention_index}
-                    y_output, c_output = self.forward(**inputs)
-                    y_hat, c_hat = self.model.filter_output_for_metric(y_output, c_output)
-                    self.test_intervention_cnf_int[c_name_i].update(y_hat, y)
+            # if self.cnf_int_policy == 'cnf_int':
+            #     print("INTERVENTION ON CONCEPTS BY CNF (INT)")
+            #     for i, c_name_i in enumerate(self.c_names):
+            #         if c_name_i in self.model.virtual_roots: continue
+            #         intervention_index = torch.ones(c.shape, device=c.device)
+            #         c_tensor_topo = batch['c'][:, self.topo_order_idx] 
+            #         c_hat_int_topo = make_int_batch(index=i, 
+            #                                         c=c_tensor_topo.to("cpu"), 
+            #                                         binary_dims=self.binary_dims, 
+            #                                         binary_min_values=self.binary_min_values.to("cpu"), 
+            #                                         binary_max_values=self.binary_max_values.to("cpu"), 
+            #                                         flow_loaded=self.cnf_flow_loaded)
+            #         incomplete_idx = [self.topological_order.index(n) for n in self.c_names] # original order index of selected concepts
+            #         c_hat_int = c_hat_int_topo[:, incomplete_idx].to(c.device) # rearrange to original order
+            #         inputs = {'x':x, 'c':c_hat_int, 'intervention_index':intervention_index}
+            #         y_output, c_output = self.forward(**inputs)
+            #         y_hat, c_hat = self.model.filter_output_for_metric(y_output, c_output)
+            #         self.test_intervention_cnf_int[c_name_i].update(y_hat, y)
 
 
 
