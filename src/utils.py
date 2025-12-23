@@ -529,24 +529,92 @@ def make_cf_batch(c_hat, index, c, binary_dims, binary_min_values, binary_max_va
         c_hat_cf = c_hat_deq_cf
     return c_hat_cf
 
-def make_int_batch(index, c, binary_dims, binary_min_values, binary_max_values, flow_loaded):
-    '''
-    c_hat : predicted concept labels
-    index : index of the concept to intervene
-    c : intervention value
 
-    return : interventional concept binary labels (after quantization)
-    '''
+def make_cf_batch_sequential(
+    c_hat,
+    indices,                  # list[int] : topo order 기준 index들
+    c,
+    binary_dims,
+    binary_min_values,
+    binary_max_values,
+    flow_loaded,
+    prob_values,
+):
+    """
+    Sequential counterfactual intervention following topological order.
 
-    N = c.shape[0]
-    torch.manual_seed(42)
-    random_values = torch.rand(N, 1, device=c.device, dtype=c.dtype)
-    intervention_values = (c[:, index:index+1] + random_values).squeeze(1)  # (N, 1) 형태로 유지
+    Args:
+        c_hat : (N, d) predicted concept tensor (factual)
+        indices : list of concept indices (topological order!)
+        c : (N, d) ground-truth concept tensor (intervention values)
+        binary_dims : list of binary dimensions
+        binary_min_values : tensor
+        binary_max_values : tensor
+        flow_loaded : trained CNF
+        prob_values : bool (prob CF or hard CF)
 
-    c_hat_deq_int = []
-    for i in range(N):
-        int_i = flow_loaded.sample_interventional(index=index, value=intervention_values[i], sample_shape = (1,))
-        c_hat_deq_int.append(int_i)
-    c_hat_deq_int = torch.cat(c_hat_deq_int, dim=0)
-    c_hat_int = post_process(c_hat_deq_int, binary_dims, binary_min_values, binary_max_values)
-    return c_hat_int
+    Returns:
+        c_hat_cf : (N, d) counterfactual concepts
+    """
+
+    # ------------------------------------------------
+    # 1. Device 정렬
+    # ------------------------------------------------
+    try:
+        target_device = next(flow_loaded.parameters()).device
+    except:
+        target_device = c_hat.device
+
+    c_current = c_hat.to(target_device).float()
+    c = c.to(target_device).float()
+
+    binary_min_values = binary_min_values.to(target_device)
+    binary_max_values = binary_max_values.to(target_device)
+
+    N = c_current.shape[0]
+
+    # ------------------------------------------------
+    # 2. Topological order 순차 개입
+    # ------------------------------------------------
+    for idx in indices:
+
+        # --- dequantization (현재 상태 기준) ---
+        c_deq = c_current.clone()
+
+        if not prob_values:
+            torch.manual_seed(42)
+            c_deq[:, binary_dims] = (
+                c_deq[:, binary_dims]
+                + 0.1 * torch.rand_like(c_deq[:, binary_dims])
+            )
+            random_values = 0.1 * torch.rand(
+                N, device=target_device, dtype=c_deq.dtype
+            )
+            intervention_values = c[:, idx] + random_values
+        else:
+            intervention_values = c[:, idx]
+
+        # --- sample-wise counterfactual ---
+        c_next = []
+        for i in range(N):
+            cf_i = flow_loaded.compute_counterfactual(
+                c_deq[i].view(1, -1),
+                index=idx,
+                value=intervention_values[i],
+            ).detach()
+            c_next.append(cf_i)
+
+        c_current = torch.cat(c_next, dim=0)
+
+    # ------------------------------------------------
+    # 3. Post-processing (binary quantization)
+    # ------------------------------------------------
+    if not prob_values:
+        c_current = post_process(
+            c_current,
+            binary_dims,
+            binary_min_values,
+            binary_max_values,
+        )
+
+    return c_current

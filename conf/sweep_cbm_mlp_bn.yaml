@@ -11,7 +11,7 @@ defaults:
 hydra:
   mode: MULTIRUN
   sweep:
-    dir: "outputs/multirun/${now:%Y-%m-%d}/${now:%H-%M-%S}_cbm_mlp_asia_independent_wandb"
+    dir: "outputs/multirun/${now:%Y-%m-%d}/${now:%H-%M-%S}_cbm_mlp_noise_scm_indep_cnf_cf"
   sweeper:
     # standard grid search
     grid_params:
@@ -20,7 +20,7 @@ hydra:
       # colormnist, colormnist_ood, celeba, celeba_unfair, siim_pneumothorax
       # possible models are:
       # blackbox, blackbox_multi, cbm_linear, cbm_mlp, cem, c2bm
-      model: cbm_linear
+      model: cbm_mlp
       seed: 1 #,2 #,3,4,5
 
     #tei 추가 12/3
@@ -32,7 +32,7 @@ hydra:
       # model.hidden_size:      [64, 32, 32, 32, 64]    
       # model.concept_loss_weight: [0.8, 0.8, 0.8, 0.8, 0.8]
       # engine.optim_kwargs.lr: [0.00075, 0.0004, 0.00075, 0.00075, 0.00075]
-      dataset: asia
+      dataset: scm #scm
       model.hidden_size:      [64]   
       model.concept_loss_weight: [0.8]
       engine.optim_kwargs.lr: [0.00075]
@@ -43,12 +43,12 @@ hydra:
 #policy: nodes_true # levels_true, levels_pred, nodes_true, nodes_pred, random
 
 #tei 수정 12/11 w/yeom
-policy: nodes_true #none, levels_true, levels_pred, nodes_true, nodes_pred, random , cnf_cf, cnf_prob_cf
-cnf_bundle_path: '/home/taehui/causally-reliable-cbm/CNF_notebooks/cnf_bundle_asia.pt'
+policy: cnf_cf #none, levels_true, levels_pred, nodes_true, nodes_pred, random , cnf_cf, cnf_prob_cf
+cnf_bundle_path: '/home/taehui/causally-reliable-cbm/CNF_notebooks/cnf_bundle_noise_scm.pt'
 
 #test_only: false # false
-test_only: false
-ckpt_path: '/home/taehui/causally-reliable-cbm/outputs/multirun/2025-12-18/19-17-55_cbm_mlp_asia_independent/0/checkpoints/epoch=2-step=330.ckpt'
+test_only: true
+ckpt_path: '/home/taehui/causally-reliable-cbm/outputs/multirun/2025-12-23/13-43-03_cbm_mlp_noise_scm_indep_training/0/checkpoints/epoch=191-step=21120.ckpt'
 
 
 
@@ -63,11 +63,11 @@ dataset:
     noise: 0.5  # for bndatasets only
 
 engine:
-  intervention_prob: 0.8
+  intervention_prob: 0
   #test_interv_noise: 0.8   # for bndatasets only
   test_interv_noise: 0
 trainer:
-  logger: wandb  # wandb, null
+  logger: null  # wandb, null
   devices: [0]
   max_epochs: 500
   patience: 30

@@ -201,6 +201,24 @@ def preprocess_dataset(cfg, _dataset, device, backbone) -> dict:
         dataset = SyntheticDatasetContainer(data=dataset,
                                    c_info=c_info,
                                    y_info=y_info,)
+    
+    #tei 수정 12/21
+    elif cfg.dataset.get('name') == 'scm':
+        # 새로운 SCM 데이터셋 처리
+        c_info = {}
+        # SCM은 역할이 고정된 4개의 Concept을 가짐
+        c_info['names'] = ['c0_root', 'c1_chain', 'c2_fork', 'c3_collider']
+        c_info['cardinality'] = [2, 2, 2, 2]
+            
+        y_info = {}
+        y_info['names'] = ['y']
+        y_info['cardinality'] = [2]
+        
+        dataset = SyntheticDatasetContainer(data=dataset,
+                                   c_info=c_info,
+                                   y_info=y_info,)
+
+
     else:
         raise ValueError(f"Preprocessing is missing for dataset: {cfg.dataset.get('name')}")
     

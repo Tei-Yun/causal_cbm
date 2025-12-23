@@ -3,19 +3,20 @@ import os
 import torch  # 텐서가 포함된 경우를 위해 임포트
 
 # 대상 디렉토리 설정
-target_dir = '/home/taehui/causally-reliable-cbm/outputs/multirun/2025-12-18/16-46-15_cbm_mlp_asia_joint/0/results'
+target_dir = '/home/taehui/causally-reliable-cbm/outputs/multirun/2025-12-23/15-30-46_cbm_mlp_asia_indep_cnf_prob_cf/0/results'
 
 # 출력하고 싶은 특정 파일 목록
 target_files = [
     'c_accuracy.pkl',
-    #'cnf_cf_interventions_on_y.pkl',
-    'level_interventions_on_c.pkl',
+    'cnf_cf_interventions_on_y.pkl',
+    #'level_interventions_on_c.pkl',
     'level_interventions_on_y.pkl',
     'single_c_interventions_on_y.pkl',
-    'y_accuracy.pkl'
-    #'c_hat_with_task_probs.pkl',
-    #'all_ground_truth_concepts_with_task.pkl'
-
+    #'y_accuracy.pkl'
+    'cbm_cumulative_interventions_on_c.pkl',
+    'cbm_cumulative_interventions_on_y.pkl',
+    'cnf_cf_cumulative_interventions_on_y.pkl',
+    'cnf_cf_cumulative_interventions_on_c.pkl',
 ]
 
 print(f"Inspecting specific .pkl files in: {target_dir}\n")

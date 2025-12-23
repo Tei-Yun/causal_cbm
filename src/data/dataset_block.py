@@ -26,10 +26,24 @@ def get_dataset(cfg):
     destination_path = os.path.join(dataset_directory, f"preprocessed_dataset_{cfg.seed}.pkl") # '.cache\에 저장
     if cfg.dataset.get('load_embeddings') == False:
         dataset = instantiate(cfg.dataset.loader)
-        dataset = preprocess_dataset(cfg, 
-                                     dataset, 
-                                     device=cfg.device,
-                                     backbone=cfg.dataset.backbone)
+
+        #tei 수정 12/21 bnlearn dataset 전처리 부분
+        if cfg.dataset.name in ['asia', 'alarm', 'sachs', 'hailfinder', 'insurance']:
+            dataset = preprocess_dataset(
+            cfg,
+            dataset,
+            device=cfg.device,
+            backbone=None
+        )
+        else:
+            dataset = preprocess_dataset(
+                cfg,
+                dataset,
+                device=cfg.device,
+                backbone=cfg.dataset.backbone
+    )
+
+
         with open(destination_path, 'wb') as f: 
             pickle.dump(dataset, f)
     else:

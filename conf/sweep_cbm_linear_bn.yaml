@@ -11,7 +11,7 @@ defaults:
 hydra:
   mode: MULTIRUN
   sweep:
-    dir: "outputs/multirun/${now:%Y-%m-%d}/${now:%H-%M-%S}_cbm_linear_asia_joint_cnf_prob_cf"
+    dir: "outputs/multirun/${now:%Y-%m-%d}/${now:%H-%M-%S}_cbm_linear_scm_independentf"
   sweeper:
     # standard grid search
     grid_params:
@@ -25,7 +25,7 @@ hydra:
     # additional list sweeper
 
     #tei 추가 12/3
-      model.training_mode: joint  # 또는 [joint, stepwise, independent]
+      model.training_mode: independent  # 또는 [joint, stepwise, independent]
 
 
     list_params:
@@ -33,7 +33,7 @@ hydra:
       # model.hidden_size:      [64, 64, 32, 32, 64]    
       # model.concept_loss_weight: [0.8, 0.8, 0.8, 0.8, 0.8]
       # engine.optim_kwargs.lr: [0.00075, 0.00075, 0.00075, 0.00075, 0.00075]
-      dataset: asia
+      dataset: scm
       model.hidden_size:      [64]   
       model.concept_loss_weight: [0.8]
       engine.optim_kwargs.lr: [0.00075]
@@ -45,11 +45,11 @@ hydra:
 #policy: nodes_true # levels_true, levels_pred, nodes_true, nodes_pred, random
 
 #tei 수정 12/11 w/yeom
-policy: cnf_prob_cf #none, levels_true, levels_pred, nodes_true, nodes_pred, random , cnf_cf, cnf_prob_cf
-cnf_bundle_path: '/home/taehui/causally-reliable-cbm/CNF_notebooks/cnf_bundle_asia.pt'
+policy: levels_true #none, levels_true, levels_pred, nodes_true, nodes_pred, random , cnf_cf, cnf_prob_cf
+cnf_bundle_path: '/home/taehui/causally-reliable-cbm/CNF_notebooks/cnf_bundle_scm.pt'
 
 #test_only: false # false
-test_only: true
+test_only: false
 ckpt_path: '/home/taehui/causally-reliable-cbm/outputs/multirun/2025-12-18/20-48-16_cbm_linear_asia_joint_wandb/0/checkpoints/epoch=66-step=938.ckpt'
 
 

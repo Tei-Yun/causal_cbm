@@ -67,6 +67,107 @@ def ReLU(x):
     return x * (x > 0)
 
 
+#tei 추가 12/21 
+def generate_synthetic_data_scm(p: int, n: int, k: int, seed: int):
+    """
+    Generate a synthetic dataset based on a specific Structural Causal Model (SCM).
+    Structure:
+    C0 (Root)
+    C1 <- C0 (Chain)
+    C2 <- C0 (Fork with C1)
+    C3 <- C1, C2 (Collider)
+    Y  <- C3
+    
+    Args:
+        p (int): Number of covariates (X dimension).
+        n (int): Number of data points.
+        k (int): Number of concepts (Ignored, fixed to 4 for this SCM).
+        seed (int): Random generator seed.
+
+    Returns:
+        tuple: X, c, y
+    """
+    np.random.seed(seed)
+    
+    # 1. Generate Concepts (SCM)
+    # C0: Root variable ~ Bernoulli(0.5)
+    c0 = np.random.binomial(1, 0.5, n)
+
+    # C1: Depends on C0 (Chain: C0 -> C1)
+    # If C0=1, 80% chance C1=1. If C0=0, 20% chance C1=1.
+    prob_c1 = 0.8 * c0 + 0.2 * (1 - c0)
+    c1 = np.random.binomial(1, prob_c1)
+
+    # C2: Depends on C0 (Fork: C1 <- C0 -> C2)
+    # If C0=1, 70% chance C2=1.
+    prob_c2 = 0.7 * c0 + 0.3 * (1 - c0)
+    c2 = np.random.binomial(1, prob_c2)
+
+    # C3: Depends on C1 and C2 (Collider: C1 -> C3 <- C2)
+    # Let's use a noisy AND gate: C3 is likely 1 if C1=1 AND C2=1
+    prob_c3 = 0.9 * (c1 * c2) + 0.1 * (1 - (c1 * c2))
+    c3 = np.random.binomial(1, prob_c3)
+
+    # Stack concepts (n, 4)
+    c = np.stack([c0, c1, c2, c3], axis=1)
+
+    # 2. Generate Label Y
+    # Y depends primarily on C3 (and maybe some noise)
+    # Y = C3
+    prob_y = 0.95 * c3 + 0.05 * (1 - c3)
+    y = np.random.binomial(1, prob_y).reshape(-1, 1)
+
+    # 3. Generate Features X
+    # Map discrete concepts to continuous latent space z
+    # Add noise so X isn't just a perfect copy of C
+    z = c.astype(float) + np.random.normal(0, 0.5, c.shape)
+    
+    # Non-linear mapping to high-dimensional space
+    # Input dimension is 4 (number of concepts), Output is p
+    g = random_nonlin_map(
+        n_in=4,
+        n_out=p,
+        n_hidden=10, # Slightly more complex mapping
+    )
+    X = g(z)
+
+    # Standardize and add observation noise
+    ss = StandardScaler()
+    X = ss.fit_transform(X)
+    X = X + np.random.normal(0, 0.5, X.shape) # Add noise to features
+    X = ss.fit_transform(X)
+
+    return X, c, y
+
+
+
+def generate_scm_noise_structural(p: int, n: int, k:int, seed: int):
+    np.random.seed(seed)
+
+    u0 = np.random.normal(0, 1, n)
+    u1 = np.random.normal(0, 1, n)
+    u2 = np.random.normal(0, 1, n)
+    u3 = np.random.normal(0, 1, n)
+    uy = np.random.normal(0, 1, n)
+
+    c0 = (u0 > 0).astype(int)
+    c1 = (1.5 * c0 + u1 > 0).astype(int)
+    c2 = (1.2 * c0 + u2 > 0).astype(int)
+    c3 = (1.3 * c1 + 1.3 * c2 + u3 > 1.5).astype(int)
+
+    c = np.stack([c0, c1, c2, c3], axis=1)
+
+    y = ((1.8 * c3 + 0.8 * c1 + uy) > 1.0).astype(int).reshape(-1, 1)
+
+    z = c + np.random.normal(0, 0.3, c.shape)
+    g = random_nonlin_map(4, p, 12)
+    X = g(z)
+    X = StandardScaler().fit_transform(X)
+
+    return X, c, y
+
+
+
 def generate_synthetic_data_correlated_c(p: int, n: int, k: int, seed: int):
     """
     Generate a synthetic dataset with correlated concepts.
@@ -158,6 +259,13 @@ class SyntheticDataset(data.dataset.Dataset):
         self.predicate_idx = np.arange(0, num_predicates)
         if type == "correlated_c":
             generate_synthetic_data = generate_synthetic_data_correlated_c
+        
+        
+        #tei 추가 12/21
+        elif type == "scm":
+            generate_synthetic_data = generate_synthetic_data_scm
+        elif type == "Structural-Noise SCM":
+            generate_synthetic_data = generate_scm_noise_structural
         else:
             ValueError("Simulation type not implemented!")
 
@@ -284,9 +392,39 @@ class SyntheticDatasetContainer():
     def load_ground_truth_graph(self):
         # The only edges that have to be different from 0 are the ones
         # that go from the concepts to the label.
-        adj_mat = np.zeros((len(self.c_info['names']) + 1, len(self.c_info['names']) + 1), 
-                           dtype=int)
-        adj_mat[:-1, -1] = 1
+        # adj_mat = np.zeros((len(self.c_info['names']) + 1, len(self.c_info['names']) + 1), 
+        #                    dtype=int)
+        # adj_mat[:-1, -1] = 1
+
+        #tei 추가 12/21
+        
+        # If using the SCM dataset, we know the specific graph structure
+        if len(self.c_info['names']) == 4:
+
+            adj_mat = np.zeros((5, 5), dtype=int)
+            # Indices: 0:C0, 1:C1, 2:C2, 3:C3, 4:Y
+
+            # Common SCM backbone
+            adj_mat[0, 1] = 1  # C0 -> C1
+            adj_mat[0, 2] = 1  # C0 -> C2
+            adj_mat[1, 3] = 1  # C1 -> C3
+            adj_mat[2, 3] = 1  # C2 -> C3
+
+            # Y <- C3
+            adj_mat[3, 4] = 1
+
+
+            # Y <- C3 + C1  (generate_scm_v2_structural)
+            adj_mat[1, 4] = 1
+
+
+        else:
+            # Default star graph (all C -> Y)
+            adj_mat = np.zeros((len(self.c_info['names']) + 1, len(self.c_info['names']) + 1), 
+                            dtype=int)
+            adj_mat[:-1, -1] = 1
+
+
 
         graph = pd.DataFrame(adj_mat,
                             columns=self.c_info['names'] + self.y_info['names'],

@@ -13,7 +13,7 @@ from src.models.layers.intervention import get_test_intervention_index
 
 #tei 추가 12/11 w/ yeom
 from causalflows.flows import CausalMAF
-from src.utils import post_process, add_noise, make_cf_batch, get_c_hat_tensor, make_int_batch, to_binary
+from src.utils import post_process, add_noise, make_cf_batch,make_cf_batch_sequential, get_c_hat_tensor, to_binary
 import copy
 
 class Predictor(pl.LightningModule):    
@@ -156,20 +156,7 @@ class Predictor(pl.LightningModule):
                 metrics={k: self._check_metric(m) for k, m in c_acc_levels_metrics.items()},
                 prefix="test_intervention/level/y/")
 
-            # # individual child concept accuracy after 
-            # # intervention on ancestors in the graph
-            # childs_per_level = {}
-            # for l in range(0, len(self.test_interv_policy)+1):
-            #     childs = list(itertools.chain(*self.test_interv_policy[l:]))
-            #     for child in childs:
-            #         child_name = self.c_names[child]
-            #         childs_per_level[f'level {l}/child {child_name}'] = metrics.get('classification_acc')
-            # self.test_intervention_level_c = MetricCollection(
-            #     metrics={k: self._check_metric(m) for k, m in childs_per_level.items()},
-            #     prefix="test_intervention/level/c/")
-
-            # individual concept accuracy (task ancestors only, according to the policy) after 
-            # intervention on levels defined by the policy
+    
             nodes_per_level = {}
             indices_in_policy = list(itertools.chain(*self.test_interv_policy))
             c_names_in_policy = [self.c_names[i] for i in indices_in_policy]
@@ -188,9 +175,48 @@ class Predictor(pl.LightningModule):
                 metrics={k: self._check_metric(m) for k, m in c_acc_metrics.items()},
                 prefix="test_intervention/cnf_cf/")
 
-            self.test_intervention_cnf_int = MetricCollection(
-                metrics={k: self._check_metric(m) for k, m in c_acc_metrics.items()},
-                prefix="test_intervention/cnf_int/")
+            # [Modified] CNF Cumulative Intervention Metrics (Y accuracy)
+            # Policy Level이 아닌, Topological Order 순서대로 0개~N개 누적 개입
+            self.test_intervention_cnf_cf_cumulative = MetricCollection(
+                metrics={f'count_{n}': self._check_metric(metrics.get('classification_acc'))
+                         for n in range(0, len(self.c_names)+1)},
+                prefix="test_intervention/cnf_cf/cumulative/")
+
+            self.test_intervention_cbm_cumulative = MetricCollection(
+                metrics={f'count_{n}': self._check_metric(metrics.get('classification_acc'))
+                        for n in range(0, len(self.c_names)+1)},
+                prefix="test_intervention/cbm/cumulative/")
+
+
+            # [Add] CNF Single Concept Intervention Metrics (C accuracy)
+            # Tracks accuracy of target_c when source_c is intervened
+            # Key format: "{source_c}_to_{target_c}"
+            cnf_c_metrics = {}
+            for src in self.c_names:
+                for tgt in self.c_names:
+                    cnf_c_metrics[f'{src}_to_{tgt}'] = metrics.get('classification_acc')
+            
+            self.test_intervention_cnf_cf_c = MetricCollection(
+                metrics={k: self._check_metric(m) for k, m in cnf_c_metrics.items()},
+                prefix="test_intervention/cnf_cf/c/")
+
+            # [Modified] Step별 Concept Accuracy를 저장하기 위해 키 확장
+            # 예: count_0_c0, count_0_c1, ..., count_1_c0, ...
+            cumulative_c_metrics = {}
+            for step in range(len(self.c_names) + 1):
+                for c_name in self.c_names:
+                    cumulative_c_metrics[f'count_{step}_{c_name}'] = metrics.get('classification_acc')
+
+            
+            # [Fix] 위에서 만든 cumulative_c_metrics를 사용하여 MetricCollection 초기화
+            self.test_intervention_cnf_cf_cumulative_c = MetricCollection(
+                metrics={k: self._check_metric(m) for k, m in cumulative_c_metrics.items()},
+                prefix="test_intervention/cnf_cf/cumulative/c/")
+
+            self.test_intervention_cbm_cumulative_c = MetricCollection(
+                metrics={k: self._check_metric(m) for k, m in cumulative_c_metrics.items()},
+                prefix="test_intervention/cbm/cumulative/c/")
+
 
             # --- fairness metrics ---
             self.cace = MetricCollection(
@@ -325,32 +351,95 @@ class Predictor(pl.LightningModule):
                     incomplete_idx = [self.topological_order.index(n) for n in self.c_names] # original order index of selected concepts
                     c_hat_cf = c_hat_cf_topo[:, incomplete_idx].to(c.device) # rearrange to original order
                     inputs = {'x':x, 'c':c_hat_cf, 'intervention_index':intervention_index}
+
                     y_output, c_output = self.forward(**inputs)
                     y_hat, c_hat = self.model.filter_output_for_metric(y_output, c_output)
-                    self.test_intervention_cnf_cf[c_name_i].update(y_hat, y)      
+                    self.test_intervention_cnf_cf[c_name_i].update(y_hat, y) 
 
-            
-            # if self.cnf_int_policy == 'cnf_int':
-            #     print("INTERVENTION ON CONCEPTS BY CNF (INT)")
-            #     for i, c_name_i in enumerate(self.c_names):
-            #         if c_name_i in self.model.virtual_roots: continue
-            #         intervention_index = torch.ones(c.shape, device=c.device)
-            #         c_tensor_topo = batch['c'][:, self.topo_order_idx] 
-            #         c_hat_int_topo = make_int_batch(index=i, 
-            #                                         c=c_tensor_topo.to("cpu"), 
-            #                                         binary_dims=self.binary_dims, 
-            #                                         binary_min_values=self.binary_min_values.to("cpu"), 
-            #                                         binary_max_values=self.binary_max_values.to("cpu"), 
-            #                                         flow_loaded=self.cnf_flow_loaded)
-            #         incomplete_idx = [self.topological_order.index(n) for n in self.c_names] # original order index of selected concepts
-            #         c_hat_int = c_hat_int_topo[:, incomplete_idx].to(c.device) # rearrange to original order
-            #         inputs = {'x':x, 'c':c_hat_int, 'intervention_index':intervention_index}
-            #         y_output, c_output = self.forward(**inputs)
-            #         y_hat, c_hat = self.model.filter_output_for_metric(y_output, c_output)
-            #         self.test_intervention_cnf_int[c_name_i].update(y_hat, y)
+                    # [Add] Update C metrics (다른 Concept들에 대한 영향)
+                    if c_hat is not None:
+                        for target_c_name in self.c_names:
+                            if target_c_name in c_hat:
+                                metric_key = f'{c_name_i}_to_{target_c_name}'
+                                # [Fix] target_idx를 미리 계산하여 슬라이싱 에러 방지
+                                try:
+                                    target_idx = self.c_names.index(target_c_name)
+                                    target_c_tensor = c[:, target_idx]
+                                    self.test_intervention_cnf_cf_c[metric_key].update(c_hat[target_c_name], target_c_tensor)
+                                except Exception as e:
+                                    print(f"Error updating metric {metric_key}: {e}")
+                                    # pass     
 
+                # 2. [Add] Level Intervention Loop for CNF
+                # 2. [Modified] Cumulative Intervention Loop (Topo Order 순서대로 누적)
+                print("INTERVENTION ON CUMULATIVE NODES BY CNF (PROB CF)")
+                
+                # Topological Order 중 현재 모델에서 사용하는 Concept만 필터링
+                ordered_concepts = [node for node in self.topological_order if node in self.c_names]
+                
+                # 0개부터 N개까지 순차적으로 개입 누적
+                for k in range(len(ordered_concepts) + 1):
+                    # k=0: [], k=1: [c1], k=2: [c1, c2], ...
+                    nodes_to_intervene = ordered_concepts[0:k]
+                    
+                    # Convert names to topological indices
+                    topo_indices = [self.topological_order.index(n) for n in nodes_to_intervene if n not in self.model.virtual_roots]
+                    
+                    if len(topo_indices) == 0:
+                        # No intervention -> Use factual
+                        # No intervention -> Use factual (but convert to tensor!)
+                        # [Fix] c_hat_factual(dict) -> Tensor 변환
+                        c_tensor_topo = batch['c'][:, self.topo_order_idx]
+                        c_hat_cf_topo = get_c_hat_tensor(self.topological_order, c_hat_factual, c_tensor_topo, prob_values=True)
+                        
+                        # 원래 순서로 재정렬
+                        incomplete_idx = [self.topological_order.index(n) for n in self.c_names]
+                        c_hat_cf = c_hat_cf_topo[:, incomplete_idx].to(c.device)
+                    else:
+                        intervention_index = torch.ones(c.shape, device=c.device)
+                        c_tensor_topo = batch['c'][:, self.topo_order_idx]
+                        c_hat_tensor = get_c_hat_tensor(self.topological_order, c_hat_factual, c_tensor_topo, prob_values=True)
+                        
+                        # 리스트 형태의 topo_indices 전달 (make_cf_batch 수정 필요)
+                        c_hat_cf_topo = make_cf_batch_sequential(c_hat_tensor, 
+                                                        indices=topo_indices, 
+                                                        c=c_tensor_topo, 
+                                                        binary_dims=self.binary_dims, 
+                                                        binary_min_values=self.binary_min_values, 
+                                                        binary_max_values=self.binary_max_values, 
+                                                        flow_loaded=self.cnf_flow_loaded,
+                                                        prob_values=True)
+                        incomplete_idx = [self.topological_order.index(n) for n in self.c_names]
+                        c_hat_cf = c_hat_cf_topo[:, incomplete_idx].to(c.device)
 
+                    # Forward with intervened concepts
+                    inputs = {'x':x, 'c':c_hat_cf, 'intervention_index':torch.ones(c.shape, device=c.device)} 
+                    y_output, c_output = self.forward(**inputs)
+                    y_hat, c_hat = self.model.filter_output_for_metric(y_output, c_output)
+                    
+                    # Update Cumulative Metric
+                    # [Fix] 키가 존재하는지 확인
+                    metric_key = f'count_{k}'
+                    if metric_key in self.test_intervention_cnf_cf_cumulative:
+                        
+                        self.test_intervention_cnf_cf_cumulative[metric_key].update(y_hat, y)
 
+                        if c_hat is not None:
+                            for name in self.c_names:
+                                if name in c_hat:
+                                    # [Modified] Step별 키 생성 (count_k_cname)
+                                    c_metric_key = f'count_{k}_{name}'
+                                    
+                                    # c_hat_cf는 이미 개입된 값과 예측된 값이 섞여 있는 Tensor
+                                    gt = c[:, self.c_names.index(name)]
+                                    
+                
+                         
+                                
+                                    
+                                    self.test_intervention_cnf_cf_cumulative_c[c_metric_key].update(c_hat[name], gt)
+                    else:
+                        print(f"Warning: Metric key {metric_key} not found in cumulative metrics.")
 
             #Single Concept Intervention (하나씩 개입)
             # interventions on individual concepts
@@ -367,8 +456,8 @@ class Predictor(pl.LightningModule):
                 # update metric after intervention:
                 # 결과 기록 (이 Concept을 알면 y 예측이 얼마나 좋아지는가?)
                 self.test_intervention_single_y[c_name_i].update(y_hat, y)
-
-            # level intervention
+     
+             # level intervention
             #Level/Group Intervention (그룹 개입)
             for l in range(0, len(self.test_interv_policy)+1):
 
@@ -395,6 +484,49 @@ class Predictor(pl.LightningModule):
                         # this can happen if the model does not predict all concepts
                         pass
 
+            #tei 추가 12/21
+            print("INTERVENTION ON CUMULATIVE NODES BY CBM")
+
+            ordered_concepts = [node for node in self.topological_order if node in self.c_names]
+            name_to_idx = {name: i for i, name in enumerate(self.c_names)}
+
+            B, C = c.shape
+
+            for k in range(len(ordered_concepts) + 1):
+                nodes_to_intervene = ordered_concepts[:k]
+
+                # (1) intervention mask 생성
+                intervention_index = torch.zeros((B, C), device=c.device)
+                for n in nodes_to_intervene:
+                    if n in self.model.virtual_roots:
+                        continue
+                    intervention_index[:, name_to_idx[n]] = 1.0
+
+                # (2) CBM do-intervention: c는 GT 그대로
+                inputs = {
+                    'x': x,
+                    'c': c,
+                    'intervention_index': intervention_index
+                }
+
+                y_output, c_output = self.forward(**inputs)
+                y_hat, c_hat_pred = self.model.filter_output_for_metric(y_output, c_output)
+
+                metric_key = f'count_{k}'
+                self.test_intervention_cbm_cumulative[metric_key].update(y_hat, y)
+
+                if c_hat_pred is not None:
+                    for name in self.c_names:
+                        if name in c_hat_pred:
+                            idx = self.c_names.index(name)
+                            gt = c[:, idx]
+                            
+                            # [Modified] Step별 키 생성
+                            c_metric_key = f'count_{k}_{name}'
+                            
+
+                            
+                            self.test_intervention_cbm_cumulative_c[c_metric_key].update(c_hat_pred[name], gt)
     def test_intervention_fairness(self, batch):
         if self.model.has_concepts:
             x, c, y = self._unpack_batch(batch)
@@ -574,18 +706,76 @@ class Predictor(pl.LightningModule):
                 print(f"Task accuracy after CNF(CF) on {c_name}: {y_int[c_name]}")
             pickle.dump(y_int, open(f'results/cnf_cf_interventions_on_y.pkl', 'wb'))
 
-
-            # CNF interventional task accuracy
-            y_int = {}
-            for k, metric in self.test_intervention_cnf_int.items():
-                c_name = _remove_prefix(k, self.test_intervention_cnf_int.prefix)
-                y_int[c_name] = metric.compute().item()
-                print(f"Task accuracy after CNF(INT) on {c_name}: {y_int[c_name]}")
-            pickle.dump(y_int, open(f'results/cnf_int_interventions_on_y.pkl', 'wb'))
-
+            # [Modified] CNF Cumulative Y accuracy
+            y_int_cum = {}
+            for k, metric in self.test_intervention_cnf_cf_cumulative.items():
+                count = _remove_prefix(k, self.test_intervention_cnf_cf_cumulative.prefix)
+                y_int_cum[count] = metric.compute().item()
+                print(f"Task accuracy after CNF(CF) cumulative {count}: {y_int_cum[count]}")
+            pickle.dump(y_int_cum, open(f'results/cnf_cf_cumulative_interventions_on_y.pkl', 'wb'))
 
 
+            y_int_cum_cbm = {}
+            for k, metric in self.test_intervention_cbm_cumulative.items():
+                count = _remove_prefix(k, self.test_intervention_cbm_cumulative.prefix)
+                y_int_cum_cbm[count] = metric.compute().item()
+                print(f"Task accuracy after CBM cumulative {count}: {y_int_cum_cbm[count]}")
 
+            pickle.dump(
+                y_int_cum_cbm,
+                open("results/cbm_cumulative_interventions_on_y.pkl", "wb")
+            )
+
+            # [Add] CNF Single Concept C accuracy
+            c_int_c = {}
+            for k, metric in self.test_intervention_cnf_cf_c.items():
+                key_name = _remove_prefix(k, self.test_intervention_cnf_cf_c.prefix)
+                c_int_c[key_name] = metric.compute().item()
+            pickle.dump(c_int_c, open(f'results/cnf_cf_interventions_on_c.pkl', 'wb'))
+
+            
+            
+            
+            # [Modified] CBM Cumulative Concept Accuracy 저장
+            c_int_cbm_cum = {}
+            for k, metric in self.test_intervention_cbm_cumulative_c.items():
+                # key format: count_{step}_{cname}
+                full_key = _remove_prefix(k, self.test_intervention_cbm_cumulative_c.prefix)
+                # 파싱: count_0_c0 -> step=0, cname=c0
+                parts = full_key.split('_')
+                step = parts[1] # 0
+                c_name = "_".join(parts[2:]) # c0 (혹은 c_0 등)
+                
+                if step not in c_int_cbm_cum:
+                    c_int_cbm_cum[step] = {}
+                
+                val = metric.compute().item()
+                c_int_cbm_cum[step][c_name] = val
+                # 너무 많으니 출력은 생략하거나 필요한 경우만 출력
+                # print(f"CBM cumulative step {step} concept {c_name}: {val}")
+            
+            print("Saving CBM cumulative concept accuracy...")
+            pickle.dump(c_int_cbm_cum, open(f'results/cbm_cumulative_interventions_on_c.pkl', 'wb'))
+
+            # [Modified] CNF Cumulative Concept Accuracy 저장
+            c_int_cum_cnf = {}
+            for k, metric in self.test_intervention_cnf_cf_cumulative_c.items():
+                full_key = _remove_prefix(k, self.test_intervention_cnf_cf_cumulative_c.prefix)
+                parts = full_key.split('_')
+                step = parts[1]
+                c_name = "_".join(parts[2:])
+                
+                if step not in c_int_cum_cnf:
+                    c_int_cum_cnf[step] = {}
+                
+                val = metric.compute().item()
+                c_int_cum_cnf[step][c_name] = val
+            
+            print("Saving CNF cumulative concept accuracy...")
+            pickle.dump(
+                c_int_cum_cnf,
+                open("results/cnf_cf_cumulative_interventions_on_c.pkl", "wb")
+            )
 
             # save graph and concepts
             pickle.dump({'concepts':self.c_names,
